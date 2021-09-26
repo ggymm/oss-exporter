@@ -1,17 +1,18 @@
 package main
 
 import (
-	_ "embed"
-
 	"bytes"
 	"crypto/tls"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,26 +34,37 @@ var (
 )
 
 type HuaweiCrawlerData struct {
-	SectorSize int64
+	SectorSize int64 `json:"sectorSize"`
 
-	UsableDiskpoolCapacityData int64
+	UsableDiskpoolCapacityData int64 `json:"usableDiskpoolCapacityData"`
 
-	ServerStatus            string
-	ServerStatusDescription string
-	ProductMode             string
-	SystemCapacity          int64
-	SystemUsedCapacity      int64
-	LunCapacity             int64
-	FilesystemCapacity      int64
-	DataProtectCapacity     int64
-	FreePoolCapacity        int64
-	UsableCapacity          int64
-	TotalCapacity           int64
+	ServerStatus            string `json:"serverStatus"`
+	ServerStatusDescription string `json:"serverStatusDescription"`
+	ProductMode             string `json:"productMode"`
+	SystemCapacity          int64  `json:"systemCapacity"`
+	SystemUsedCapacity      int64  `json:"systemUsedCapacity"`
+	LunCapacity             int64  `json:"lunCapacity"`
+	FilesystemCapacity      int64  `json:"filesystemCapacity"`
+	DataProtectCapacity     int64  `json:"dataProtectCapacity"`
+	FreePoolCapacity        int64  `json:"freePoolCapacity"`
+	UsableCapacity          int64  `json:"usableCapacity"`
+	TotalCapacity           int64  `json:"totalCapacity"`
 
-	StoragePoolInfo []interface{}
-	FanInfo         []interface{}
-	PowerInfo       []interface{}
-	FcPortInfo      []interface{}
+	StoragePoolInfo []interface{} `json:"storagePoolInfo"`
+	FanInfo         []interface{} `json:"fanInfo"`
+	PowerInfo       []interface{} `json:"powerInfo"`
+	FcPortInfo      []interface{} `json:"fcPortInfo"`
+}
+
+func (h *HuaweiCrawlerData) PrintFile(path string) {
+	if data, err := json.Marshal(&h); err != nil {
+		log.Fatalln(err)
+	} else {
+		_ = os.Remove(path)
+		if err := ioutil.WriteFile(path, data, os.ModePerm); err != nil {
+			log.Fatalln(err)
+		}
+	}
 }
 
 type Huawei struct {
@@ -84,6 +96,8 @@ func NewHuaweiCrawler() (*Huawei, error) {
 	c.Host = "https://7.3.20.34:8088"
 	c.Username = HuaweiAccount
 	c.Password = HuaweiPassword
+
+	c.CrawlerData = new(HuaweiCrawlerData)
 
 	return c, nil
 }
@@ -126,21 +140,22 @@ func (c *Huawei) Start() {
 	c.CrawlerData.PowerInfo = make([]interface{}, 0)
 
 	// 服务状态
-	c.GetServerStatus()
+	// c.GetServerStatus()
 	// 系统基本信息
-	c.GetSystemInfo()
+	// c.GetSystemInfo()
 	// 存储池信息
-	c.GetStoragePoolInfo()
+	// c.GetStoragePoolInfo()
 	// 风扇信息
-	c.GetFanInfo()
+	// c.GetFanInfo()
 	// 电源信息
-	c.GetPowerInfo()
+	// c.GetPowerInfo()
 	// FC端口信息
-	c.GetFcPortInfo()
+	// c.GetFcPortInfo()
 
-	fmt.Println(c.CrawlerData)
+	c.CrawlerData.PrintFile("huawei_text.txt")
+
 	// 当前系统各种参数的实时指标状态
-	// c.GetCurrentState()
+	c.GetCurrentState()
 }
 
 func (c *Huawei) Login() error {
@@ -188,6 +203,10 @@ func (c *Huawei) Login() error {
 
 			c.DeviceId = gjson.Get(string(body), "data.deviceid").String()
 			c.AuthCookie = cookies[0].Name + "=" + cookies[0].Value
+			if err := os.MkdirAll(filepath.Dir(c.AuthFile), os.ModePerm); err != nil {
+				c.Log.Errorf("创建授权信息文件失败, error: %v", err)
+				return err
+			}
 			if err := ioutil.WriteFile(c.AuthFile, []byte(c.AuthCookie), os.ModePerm); err != nil {
 				c.Log.Errorf("写入授权信息到文件失败, error: %v", err)
 				return err
@@ -390,14 +409,15 @@ func (c *Huawei) GetStoragePoolInfo() {
 			// 存储池信息
 			storagePoolInfo := make(map[string]interface{})
 
-			storagePoolInfo["Id"] = gjson.Get(string(value), "ID").String()
+			storagePoolInfo["id"] = gjson.Get(string(value), "ID").String()
+			storagePoolInfo["name"] = gjson.Get(string(value), "NAME").String()
 
 			// 健康状态
 			healthStatus := gjson.Get(string(value), "HEALTHSTATUS").String()
 			healthStatusEnum := gjson.Get(HuaweiEnumDefine, "HEALTH_STATUS_E").Map()
 			for k, v := range healthStatusEnum {
 				if v.String() == healthStatus {
-					storagePoolInfo["HealthStatus"] = k
+					storagePoolInfo["healthStatus"] = k
 				}
 			}
 
@@ -406,17 +426,17 @@ func (c *Huawei) GetStoragePoolInfo() {
 			runningStatusEnum := gjson.Get(HuaweiEnumDefine, "RUNNING_STATUS_E").Map()
 			for k, v := range runningStatusEnum {
 				if v.String() == runningStatus {
-					storagePoolInfo["RunningStatus"] = k
+					storagePoolInfo["runningStatus"] = k
 				}
 			}
 
 			// 空闲容量
 			userFreeCapacity := gjson.Get(string(value), "USERFREECAPACITY").Int()
-			storagePoolInfo["UserFreeCapacity"] = userFreeCapacity * c.CrawlerData.SectorSize
+			storagePoolInfo["userFreeCapacity"] = userFreeCapacity * c.CrawlerData.SectorSize
 
 			// 总容量
 			userTotalCapacity := gjson.Get(string(value), "USERTOTALCAPACITY").Int()
-			storagePoolInfo["UserTotalCapacity"] = userTotalCapacity * c.CrawlerData.SectorSize
+			storagePoolInfo["userTotalCapacity"] = userTotalCapacity * c.CrawlerData.SectorSize
 
 			c.CrawlerData.StoragePoolInfo = append(c.CrawlerData.StoragePoolInfo, storagePoolInfo)
 		}, "data")
@@ -434,15 +454,17 @@ func (c *Huawei) GetFanInfo() {
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
 			fanInfo := make(map[string]interface{})
 
-			fanInfo["Id"] = gjson.Get(string(value), "ID").String()
-			fanInfo["Name"] = gjson.Get(string(value), "NAME").String()
+			fanInfo["id"] = gjson.Get(string(value), "ID").String()
+			fanInfo["name"] = gjson.Get(string(value), "NAME").String()
+
+			fanInfo["location"] = gjson.Get(string(value), "LOCATION").String()
 
 			// 健康状态
 			healthStatus := gjson.Get(string(value), "HEALTHSTATUS").String()
 			healthStatusEnum := gjson.Get(HuaweiEnumDefine, "HEALTH_STATUS_E").Map()
 			for k, v := range healthStatusEnum {
 				if v.String() == healthStatus {
-					fanInfo["HealthStatus"] = k
+					fanInfo["healthStatus"] = k
 				}
 			}
 
@@ -451,7 +473,7 @@ func (c *Huawei) GetFanInfo() {
 			runningStatusEnum := gjson.Get(HuaweiEnumDefine, "RUNNING_STATUS_E").Map()
 			for k, v := range runningStatusEnum {
 				if v.String() == runningStatus {
-					fanInfo["RunningStatus"] = k
+					fanInfo["runningStatus"] = k
 				}
 			}
 
@@ -471,15 +493,15 @@ func (c *Huawei) GetPowerInfo() {
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
 			powerInfo := make(map[string]interface{})
 
-			powerInfo["Id"] = gjson.Get(string(value), "ID").String()
-			powerInfo["Name"] = gjson.Get(string(value), "NAME").String()
+			powerInfo["id"] = gjson.Get(string(value), "ID").String()
+			powerInfo["name"] = gjson.Get(string(value), "NAME").String()
 
 			// 健康状态
 			healthStatus := gjson.Get(string(value), "HEALTHSTATUS").String()
 			healthStatusEnum := gjson.Get(HuaweiEnumDefine, "HEALTH_STATUS_E").Map()
 			for k, v := range healthStatusEnum {
 				if v.String() == healthStatus {
-					powerInfo["HealthStatus"] = k
+					powerInfo["healthStatus"] = k
 				}
 			}
 
@@ -488,7 +510,7 @@ func (c *Huawei) GetPowerInfo() {
 			runningStatusEnum := gjson.Get(HuaweiEnumDefine, "RUNNING_STATUS_E").Map()
 			for k, v := range runningStatusEnum {
 				if v.String() == runningStatus {
-					powerInfo["RunningStatus"] = k
+					powerInfo["runningStatus"] = k
 				}
 			}
 
@@ -508,15 +530,15 @@ func (c *Huawei) GetFcPortInfo() {
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
 			fcPortInfo := make(map[string]interface{})
 
-			fcPortInfo["Id"] = gjson.Get(string(value), "ID").String()
-			fcPortInfo["Name"] = gjson.Get(string(value), "NAME").String()
+			fcPortInfo["id"] = gjson.Get(string(value), "ID").String()
+			fcPortInfo["name"] = gjson.Get(string(value), "NAME").String()
 
 			// 健康状态
 			healthStatus := gjson.Get(string(value), "HEALTHSTATUS").String()
 			healthStatusEnum := gjson.Get(HuaweiEnumDefine, "HEALTH_STATUS_E").Map()
 			for k, v := range healthStatusEnum {
 				if v.String() == healthStatus {
-					fcPortInfo["HealthStatus"] = k
+					fcPortInfo["healthStatus"] = k
 				}
 			}
 
@@ -525,7 +547,7 @@ func (c *Huawei) GetFcPortInfo() {
 			runningStatusEnum := gjson.Get(HuaweiEnumDefine, "RUNNING_STATUS_E").Map()
 			for k, v := range runningStatusEnum {
 				if v.String() == runningStatus {
-					fcPortInfo["RunningStatus"] = k
+					fcPortInfo["runningStatus"] = k
 				}
 			}
 

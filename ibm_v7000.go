@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"log"
 
 	"bytes"
 	"crypto/tls"
@@ -25,6 +26,40 @@ var (
 	IbmPassword string
 )
 
+type IbmV7000CrawlerData struct {
+	SectorSize int64 `json:"sectorSize"`
+
+	UsableDiskpoolCapacityData int64 `json:"usableDiskpoolCapacityData"`
+
+	ServerStatus            string `json:"serverStatus"`
+	ServerStatusDescription string `json:"serverStatusDescription"`
+	ProductMode             string `json:"productMode"`
+	SystemCapacity          int64  `json:"systemCapacity"`
+	SystemUsedCapacity      int64  `json:"systemUsedCapacity"`
+	LunCapacity             int64  `json:"lunCapacity"`
+	FilesystemCapacity      int64  `json:"filesystemCapacity"`
+	DataProtectCapacity     int64  `json:"dataProtectCapacity"`
+	FreePoolCapacity        int64  `json:"freePoolCapacity"`
+	UsableCapacity          int64  `json:"usableCapacity"`
+	TotalCapacity           int64  `json:"totalCapacity"`
+
+	StoragePoolInfo []interface{} `json:"storagePoolInfo"`
+	FanInfo         []interface{} `json:"fanInfo"`
+	PowerInfo       []interface{} `json:"powerInfo"`
+	FcPortInfo      []interface{} `json:"fcPortInfo"`
+}
+
+func (h *IbmV7000CrawlerData) PrintFile(path string) {
+	if data, err := json.Marshal(&h); err != nil {
+		log.Fatalln(err)
+	} else {
+		_ = os.Remove(path)
+		if err := ioutil.WriteFile(path, data, os.ModePerm); err != nil {
+			log.Fatalln(err)
+		}
+	}
+}
+
 type IbmV7000 struct {
 	Log *zap.SugaredLogger
 
@@ -34,6 +69,8 @@ type IbmV7000 struct {
 	Host     string
 	Account  string
 	Password string
+
+	CrawlerData *IbmV7000CrawlerData
 }
 
 func NewIbmV7000Crawler() (*IbmV7000, error) {
@@ -50,6 +87,8 @@ func NewIbmV7000Crawler() (*IbmV7000, error) {
 	c.Host = "https://7.3.20.15"
 	c.Account = IbmAccount
 	c.Password = IbmPassword
+
+	c.CrawlerData = new(IbmV7000CrawlerData)
 
 	return c, nil
 }

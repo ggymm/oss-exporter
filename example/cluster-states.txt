@@ -1,0 +1,386 @@
+{
+  "clazz": "com.ibm.evo.rpc.RPCResponse",
+  "messages": null,
+  "result": [
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "drive_w_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 1,
+      "statPeakTime": "210917001120",
+      "statPeakEpoch": 1631808680,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "drive_r_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 7,
+      "statPeak": 13,
+      "statPeakTime": "210917001155",
+      "statPeakEpoch": 1631808715,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "iplink_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_w_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 45,
+      "statPeak": 92,
+      "statPeakTime": "210917000820",
+      "statPeakEpoch": 1631808500,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "drive_r_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 10,
+      "statPeak": 861,
+      "statPeakTime": "210917001050",
+      "statPeakEpoch": 1631808650,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "cloud_up_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "sas_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 21,
+      "statPeak": 1076,
+      "statPeakTime": "210917000950",
+      "statPeakEpoch": 1631808590,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_r_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "mdisk_w_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 5,
+      "statPeak": 10,
+      "statPeakTime": "210917000900",
+      "statPeakEpoch": 1631808540,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "cloud_down_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "cloud_up_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "drive_w_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 7,
+      "statPeak": 9,
+      "statPeakTime": "210917000825",
+      "statPeakEpoch": 1631808505,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "cloud_down_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "mdisk_r_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 4,
+      "statPeak": 14,
+      "statPeakTime": "210917001020",
+      "statPeakEpoch": 1631808620,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "mdisk_r_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "mdisk_w_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 1,
+      "statPeakTime": "210917001040",
+      "statPeakEpoch": 1631808640,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "write_cache_pc",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 34,
+      "statPeak": 35,
+      "statPeakTime": "210917001010",
+      "statPeakEpoch": 1631808610,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "drive_w_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 10,
+      "statPeak": 24,
+      "statPeakTime": "210917000900",
+      "statPeakEpoch": 1631808540,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_r_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 1,
+      "statPeak": 4,
+      "statPeakTime": "210917001110",
+      "statPeakEpoch": 1631808670,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "iscsi_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 47,
+      "statPeak": 94,
+      "statPeakTime": "210917000820",
+      "statPeakEpoch": 1631808500,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 2,
+      "statPeakTime": "210917000855",
+      "statPeakEpoch": 1631808535,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "mdisk_r_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 5,
+      "statPeakTime": "210917001110",
+      "statPeakEpoch": 1631808670,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_w_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_w_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 1,
+      "statPeakTime": "210917001235",
+      "statPeakEpoch": 1631808755,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "iplink_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "drive_r_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 215,
+      "statPeakTime": "210917001050",
+      "statPeakEpoch": 1631808650,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "iscsi_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "mdisk_w_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 18,
+      "statPeak": 23,
+      "statPeakTime": "210917001120",
+      "statPeakEpoch": 1631808680,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "cpu_pc",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 1,
+      "statPeak": 2,
+      "statPeakTime": "210917001155",
+      "statPeakEpoch": 1631808715,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "fc_io",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 70,
+      "statPeak": 118,
+      "statPeakTime": "210917000820",
+      "statPeakEpoch": 1631808500,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "vdisk_r_ms",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 2,
+      "statPeak": 7,
+      "statPeakTime": "210917001110",
+      "statPeakEpoch": 1631808670,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "total_cache_pc",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 79,
+      "statPeak": 80,
+      "statPeakTime": "210917001125",
+      "statPeakEpoch": 1631808685,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "sas_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 215,
+      "statPeakTime": "210917001050",
+      "statPeakEpoch": 1631808650,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "fc_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "iplink_comp_mb",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    },
+    {
+      "clazz": "com.ibm.svc.devicelayer.api.output.ClusterStatsBean",
+      "statName": "compression_cpu_pc",
+      "sampleEpoch": 1631808760,
+      "statCurrent": 0,
+      "statPeak": 0,
+      "statPeakTime": "210917001240",
+      "statPeakEpoch": 1631808760,
+      "statValue": null
+    }
+  ]
+}

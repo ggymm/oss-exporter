@@ -102,6 +102,10 @@ func NewHuaweiCrawler() (*Huawei, error) {
 	return c, nil
 }
 
+func (c *Huawei) Debug() {
+
+}
+
 func (c *Huawei) Start() {
 	c.Log.Debug("开始抓取Huawei存储设备")
 
@@ -236,7 +240,7 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 	request.Header.Set("Cookie", c.AuthCookie)
 
 	if resp, err := client.Do(request); err != nil {
-		c.Log.Errorf("数据失败, url: %v, error: %v", url, err)
+		c.Log.Errorf("请求失败, url: %v, error: %v", url, err)
 		return "", err
 	} else {
 		defer func() {
@@ -246,10 +250,9 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 		// 判断HTTP状态码
 		code := resp.StatusCode
 		if code != 200 {
-			c.Log.Errorf("请求错误, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
-			return "", errors.New("请求错误")
+			c.Log.Errorf("请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
+			return "", errors.New("请求失败")
 		}
-
 		if body, err := ioutil.ReadAll(resp.Body); err != nil {
 			c.Log.Errorf("读取请求体数据失败, url: %s, error: %v", url, err)
 			return "", err
@@ -261,10 +264,10 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 					_ = os.Remove(c.AuthFile)
 					c.Log.Errorf("权限验证失败, 移除cookie文件, 请重新运行")
 				} else {
-					c.Log.Errorf("请求错误, url: %s, 错误码: %s, 错误信息: %s",
+					c.Log.Errorf("请求失败, url: %s, 错误码: %s, 错误信息: %s",
 						url, errorCode, gjson.Get(string(body), "error.description").String())
 				}
-				return "", errors.New("请求错误")
+				return "", errors.New("请求失败")
 			} else {
 				return string(body), nil
 			}
@@ -275,8 +278,8 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 func (c *Huawei) GetServerStatus() {
 	c.Log.Debug("[REST]服务状态")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/server/status?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/server/status?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求服务状态失败, error: %v", err)
 	} else {
 		// 服务状态
@@ -292,8 +295,8 @@ func (c *Huawei) GetServerStatus() {
 func (c *Huawei) GetSystemInfo() {
 	c.Log.Debug("[REST]系统信息")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/system/?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/system/?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求系统信息失败, error: %v", err)
 	} else {
 		// 设备型号
@@ -352,8 +355,8 @@ func (c *Huawei) GetSystemInfo() {
 func (c *Huawei) GetDiskPoolForSystem() {
 	c.Log.Debug("[REST]硬盘域信息")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/diskpool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/diskpool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求硬盘域信息失败, error: %v", err)
 	} else {
 		// 解析数据
@@ -367,8 +370,8 @@ func (c *Huawei) GetDiskPoolForSystem() {
 func (c *Huawei) GetStoragePoolForSystem() {
 	c.Log.Debug("[REST]存储池信息(For 系统信息)")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/storagepool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/storagepool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求存储池信息(For 系统信息)失败, error: %v", err)
 	} else {
 		// 解析数据
@@ -400,8 +403,8 @@ func (c *Huawei) GetStoragePoolForSystem() {
 func (c *Huawei) GetStoragePoolInfo() {
 	c.Log.Debug("[REST]存储池信息")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/storagepool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/storagepool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求存储池信息失败, error: %v", err)
 	} else {
 		// 解析数据
@@ -446,8 +449,8 @@ func (c *Huawei) GetStoragePoolInfo() {
 func (c *Huawei) GetFanInfo() {
 	c.Log.Debug("[REST]风扇信息")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/fan?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/fan?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求风扇信息失败, error: %v", err)
 	} else {
 		// 解析数据
@@ -485,8 +488,8 @@ func (c *Huawei) GetFanInfo() {
 func (c *Huawei) GetPowerInfo() {
 	c.Log.Debug("[REST]电源信息")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/power?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/power?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求电源信息失败, error: %v", err)
 	} else {
 		// 解析数据
@@ -522,8 +525,8 @@ func (c *Huawei) GetPowerInfo() {
 func (c *Huawei) GetFcPortInfo() {
 	c.Log.Debug("[REST]FC端口信息")
 
-	getUrl := fmt.Sprintf("%s/deviceManager/rest/%s/fc_port?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
-	if data, err := c.RequestJson("GET", getUrl, nil); err != nil {
+	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/fc_port?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求FC端口信息失败, error: %v", err)
 	} else {
 		// 解析数据

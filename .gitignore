@@ -3,8 +3,6 @@
 /vendor
 /_build/release
 
-/config/huawei_account
-/config/huawei_password
+/config/
 
-/config/ibm_v7000_account
-/config/ibm_v7000_password
+test_resp.txt

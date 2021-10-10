@@ -93,6 +93,10 @@ func NewIbmV7000Crawler() (*IbmV7000, error) {
 	return c, nil
 }
 
+func (c *IbmV7000) Debug() {
+
+}
+
 func (c *IbmV7000) Start() {
 	c.Log.Debug("开始抓取IBM V7000存储设备")
 

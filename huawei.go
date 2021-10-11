@@ -57,13 +57,10 @@ type HuaweiCrawlerData struct {
 }
 
 func (h *HuaweiCrawlerData) PrintFile(path string) {
-	if data, err := json.Marshal(&h); err != nil {
+	data, _ := json.Marshal(&h)
+	_ = os.Remove(path)
+	if err := ioutil.WriteFile(path, data, os.ModePerm); err != nil {
 		log.Fatalln(err)
-	} else {
-		_ = os.Remove(path)
-		if err := ioutil.WriteFile(path, data, os.ModePerm); err != nil {
-			log.Fatalln(err)
-		}
 	}
 }
 
@@ -139,9 +136,6 @@ func (c *Huawei) Start() {
 
 	// 数据初始化
 	c.CrawlerData.SectorSize = 512
-	c.CrawlerData.StoragePoolInfo = make([]interface{}, 0)
-	c.CrawlerData.FanInfo = make([]interface{}, 0)
-	c.CrawlerData.PowerInfo = make([]interface{}, 0)
 
 	// 服务状态
 	// c.GetServerStatus()
@@ -240,7 +234,7 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 	request.Header.Set("Cookie", c.AuthCookie)
 
 	if resp, err := client.Do(request); err != nil {
-		c.Log.Errorf("请求失败, url: %v, error: %v", url, err)
+		c.Log.Errorf("发送请求失败, url: %v, error: %v", url, err)
 		return "", err
 	} else {
 		defer func() {
@@ -248,10 +242,9 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 		}()
 
 		// 判断HTTP状态码
-		code := resp.StatusCode
-		if code != 200 {
-			c.Log.Errorf("请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
-			return "", errors.New("请求失败")
+		if code := resp.StatusCode; code != 200 {
+			c.Log.Errorf("发送请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
+			return "", errors.New("发送请求失败")
 		}
 		if body, err := ioutil.ReadAll(resp.Body); err != nil {
 			c.Log.Errorf("读取请求体数据失败, url: %s, error: %v", url, err)
@@ -263,11 +256,12 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 				if errorCode == "-401" {
 					_ = os.Remove(c.AuthFile)
 					c.Log.Errorf("权限验证失败, 移除cookie文件, 请重新运行")
+					return "", errors.New("权限验证失败")
 				} else {
 					c.Log.Errorf("请求失败, url: %s, 错误码: %s, 错误信息: %s",
 						url, errorCode, gjson.Get(string(body), "error.description").String())
+					return "", errors.New("请求失败")
 				}
-				return "", errors.New("请求失败")
 			} else {
 				return string(body), nil
 			}

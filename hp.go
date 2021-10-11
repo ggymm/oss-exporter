@@ -1,11 +1,11 @@
 package main
 
 import (
-	_ "embed"
-
 	"crypto/md5"
 	"crypto/tls"
+	_ "embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +33,21 @@ var (
 )
 
 type HPCrawlerData struct {
+	VendorName     string   `json:"vendorName"`
+	BundleVersions []string `json:"bundleVersions"`
+
+	ControllerStates    []interface{} `json:"controllerStates"`    // 控制器状态
+	NetworkStates       []interface{} `json:"networkStates"`       // 网络端口状态
+	PortStates          []interface{} `json:"portStates"`          // 主机端口状态
+	ExpanderPortStates  []interface{} `json:"expanderPortStates"`  // 扩展端口状态
+	CompactFlashStates  []interface{} `json:"compactFlashStates"`  // CompactFlash状态
+	PowerSuppliesStates []interface{} `json:"powerSuppliesStates"` // 电源状态
+	FanStates           []interface{} `json:"fanStates"`           // 风扇状态
+}
+
+func (h *HPCrawlerData) PrintStr() {
+	data, _ := json.MarshalIndent(&h, "", "  ")
+	fmt.Println(string(data))
 }
 
 type HP struct {
@@ -97,7 +112,16 @@ func (c *HP) Start() {
 		}
 	}
 
+	// 系统信息
 	c.GetSystemInfo()
+	// 版本信息
+	c.GetVersionInfo()
+	// 组件状态
+	c.GetComponentState()
+	// 磁盘信息
+	c.GetDiskInfo()
+
+	c.CrawlerData.PrintStr()
 }
 
 func (c *HP) Login() error {
@@ -123,8 +147,7 @@ func (c *HP) Login() error {
 			_ = resp.Body.Close()
 		}()
 
-		code := resp.StatusCode
-		if code != 200 {
+		if code := resp.StatusCode; code != 200 {
 			c.Log.Errorf("执行登陆请求失败, 错误码: %d", code)
 			return err
 		}
@@ -139,7 +162,7 @@ func (c *HP) Login() error {
 			c.Log.Errorf("解析请求结果数据失败, error: %v", err)
 			return err
 		}
-		element := doc.FindElement("//RESPONSE/OBJECT/PROPERTY[@name='response']")
+		element := doc.FindElement("/RESPONSE/OBJECT/PROPERTY[@name='response']")
 		session := element.Text()
 		if len(session) > 0 {
 			c.AuthCookie = "wbisessionkey=" + session + ";wbiusername=manage"
@@ -161,8 +184,7 @@ func (c *HP) Login() error {
 				defer func() {
 					_ = localResp.Body.Close()
 				}()
-				code := localResp.StatusCode
-				if code != 200 {
+				if code := localResp.StatusCode; code != 200 {
 					c.Log.Errorf("设置本地语言为中文失败, 错误码: %d", code)
 				} else {
 					c.Log.Debug("设置本地语言为中文成功")
@@ -194,7 +216,7 @@ func (c *HP) RequestJson(method, url string, params io.Reader) (string, error) {
 	request.Header.Set("Cookie", c.AuthCookie)
 
 	if resp, err := client.Do(request); err != nil {
-		c.Log.Errorf("请求失败, url: %v, error: %v", url, err)
+		c.Log.Errorf("发送请求失败, url: %v, error: %v", url, err)
 		return "", err
 	} else {
 		defer func() {
@@ -202,16 +224,34 @@ func (c *HP) RequestJson(method, url string, params io.Reader) (string, error) {
 		}()
 
 		// 判断HTTP状态码
-		code := resp.StatusCode
-		if code != 200 {
-			c.Log.Errorf("请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
-			return "", errors.New("请求失败")
+		if code := resp.StatusCode; code != 200 {
+			c.Log.Errorf("发送请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
+			return "", errors.New("发送请求失败")
 		}
 		if body, err := ioutil.ReadAll(resp.Body); err != nil {
 			c.Log.Errorf("读取请求体数据失败, url: %s, error: %v", url, err)
 			return "", err
 		} else {
-			return string(body), nil
+			// 判断业务状态码
+			doc := etree.NewDocument()
+			if err := doc.ReadFromBytes(body); err != nil {
+				c.Log.Errorf("解析请求体数据失败, url, %s, 错误信息: %v", url, err)
+				return "", err
+			}
+			response := doc.FindElement("/RESPONSE/OBJECT[@basetype='status']/PROPERTY[@name='response']").Text()
+			returnCode := doc.FindElement("/RESPONSE/OBJECT[@basetype='status']/PROPERTY[@name='return-code']").Text()
+			if returnCode != "0" {
+				if returnCode == "-10027" {
+					_ = os.Remove(c.AuthFile)
+					c.Log.Errorf("权限验证失败, 移除cookie文件, 请重新运行")
+					return "", errors.New("权限验证失败")
+				} else {
+					c.Log.Errorf("请求失败, url: %s, 错误码: %s, 错误信息: %s", url, returnCode, response)
+					return "", errors.New("请求失败")
+				}
+			} else {
+				return string(body), nil
+			}
 		}
 	}
 }
@@ -223,6 +263,114 @@ func (c *HP) GetSystemInfo() {
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求系统信息失败, error: %v", err)
 	} else {
-		fmt.Println(data)
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(data); err != nil {
+			c.Log.Errorf("[REST]解析系统信息响应数据失败, error: %v", err)
+		}
+		element := doc.FindElement("/RESPONSE/OBJECT/PROPERTY[@name='vendor-name']")
+		c.CrawlerData.VendorName = element.Text()
 	}
+}
+
+func (c *HP) GetVersionInfo() {
+	c.Log.Debug("[REST]版本信息")
+
+	requestUrl := fmt.Sprintf("%s/v3/api/show/version?_=%d", c.Host, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
+		c.Log.Errorf("[REST]请求版本信息失败, error: %v", err)
+	} else {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(data); err != nil {
+			c.Log.Errorf("[REST]解析版本信息响应数据失败, error: %v", err)
+		}
+		elements := doc.FindElements("/RESPONSE/OBJECT[@basetype='versions']/PROPERTY[@name='bundle-version']")
+		for i := 0; i < len(elements); i++ {
+			c.CrawlerData.BundleVersions = append(c.CrawlerData.BundleVersions, elements[i].Text())
+		}
+	}
+}
+
+func (c *HP) GetComponentState() {
+	c.Log.Debug("[REST]组件状态(不包括磁盘)")
+
+	requestUrl := fmt.Sprintf("%s/v3/api/show/enclosures?_=%d", c.Host, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
+		c.Log.Errorf("[REST]请求版本信息失败, error: %v", err)
+	} else {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(data); err != nil {
+			c.Log.Errorf("[REST]解析组件状态响应数据失败, error: %v", err)
+		}
+
+		// 控制器状态
+		cElems := doc.FindElements("/RESPONSE/OBJECT/OBJECT[@basetype='controllers']")
+		for i := 0; i < len(cElems); i++ {
+			id := cElems[i].FindElement("./PROPERTY[@name='controller-id']").Text()
+			health := cElems[i].FindElement("./PROPERTY[@name='health']").Text()
+
+			cState := make(map[string]interface{})
+			cState["id"] = id
+			cState["health"] = health
+			c.CrawlerData.ControllerStates = append(c.CrawlerData.ControllerStates, cState)
+
+			childElems := []string{
+				"./OBJECT[@basetype='network-parameters']", // 网络端口状态
+				"./OBJECT[@basetype='port']",               // 主机端口状态
+				"./OBJECT[@basetype='expander-ports']",     // 扩展端口状态
+				"./OBJECT[@basetype='compact-flash']",      // CompactFlash状态
+			}
+			for i := 0; i < len(childElems); i++ {
+				stateElems := cElems[i].FindElements(childElems[i])
+				for j := 0; j < len(stateElems); j++ {
+					id := stateElems[j].FindElement("./PROPERTY[@name='durable-id']").Text()
+					health := stateElems[j].FindElement("./PROPERTY[@name='health']").Text()
+
+					state := make(map[string]interface{})
+					state["id"] = id
+					state["health"] = health
+					switch i {
+					case 0:
+						c.CrawlerData.NetworkStates = append(c.CrawlerData.NetworkStates, state)
+					case 1:
+						c.CrawlerData.PortStates = append(c.CrawlerData.PortStates, state)
+					case 2:
+						c.CrawlerData.ExpanderPortStates = append(c.CrawlerData.ExpanderPortStates, state)
+					case 3:
+						c.CrawlerData.CompactFlashStates = append(c.CrawlerData.CompactFlashStates, state)
+					}
+				}
+			}
+		}
+
+		// 电源状态
+		psElems := doc.FindElements("/RESPONSE/OBJECT/OBJECT[@basetype='power-supplies']")
+		for i := 0; i < len(psElems); i++ {
+			id := psElems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
+			health := psElems[i].FindElement("./PROPERTY[@name='health']").Text()
+
+			psState := make(map[string]interface{})
+			psState["id"] = id
+			psState["health"] = health
+			c.CrawlerData.PowerSuppliesStates = append(c.CrawlerData.PowerSuppliesStates, psState)
+
+			// 风扇状态
+			fElems := psElems[i].FindElements("./OBJECT[@basetype='fan']")
+			for i := 0; i < len(fElems); i++ {
+				id := fElems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
+				health := fElems[i].FindElement("./PROPERTY[@name='health']").Text()
+
+				fState := make(map[string]interface{})
+				fState["id"] = id
+				fState["health"] = health
+				c.CrawlerData.FanStates = append(c.CrawlerData.FanStates, fState)
+			}
+		}
+	}
+}
+
+func (c *HP) GetDiskInfo() {
+	c.Log.Debug("[REST]磁盘信息")
+
+	// view-source:https://7.3.20.19/v3/api/show/disks?_=1633914554615
+
 }

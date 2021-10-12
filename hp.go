@@ -513,12 +513,9 @@ func (c *HP) GetVolumeGroupInfo() error {
 			sizeNumericInt, _ := strconv.ParseInt(sizeNumeric, 10, 64)
 
 			volumeTypeNumeric := elems[i].FindElement("./PROPERTY[@name='volume-type-numeric']").Text()
-			if volumeTypeNumeric == "0" ||
-				volumeTypeNumeric == "2" ||
-				volumeTypeNumeric == "4" ||
-				volumeTypeNumeric == "8" ||
-				volumeTypeNumeric == "13" ||
-				volumeTypeNumeric == "15" {
+			if volumeTypeNumeric == "0" || volumeTypeNumeric == "2" ||
+				volumeTypeNumeric == "4" || volumeTypeNumeric == "8" ||
+				volumeTypeNumeric == "13" || volumeTypeNumeric == "15" {
 				volumeTotalSize += sizeNumericInt * 512
 			}
 		}

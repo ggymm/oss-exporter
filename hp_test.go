@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/beevik/etree"
+	"strconv"
 	"testing"
 
 	"github.com/robertkrimen/otto"
@@ -45,6 +46,7 @@ func TestHP_GetComponentState(t *testing.T) {
 	doc := etree.NewDocument()
 	if err := doc.ReadFromString(TestResp); err != nil {
 		t.Errorf("[REST]解析组件状态响应数据失败, error: %v", err)
+		return
 	}
 
 	controllerElems := doc.FindElements("/RESPONSE/OBJECT/OBJECT[@basetype='controllers']")
@@ -54,36 +56,29 @@ func TestHP_GetComponentState(t *testing.T) {
 
 		t.Log("控制器状态", id, health)
 
-		npElems := controllerElems[i].FindElements("./OBJECT[@basetype='network-parameters']")
-		for i := 0; i < len(npElems); i++ {
-			id := npElems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
-			health := npElems[i].FindElement("./PROPERTY[@name='health']").Text()
-
-			t.Log("网络端口状态", id, health)
+		childElems := []string{
+			"./OBJECT[@basetype='network-parameters']", // 网络端口状态
+			"./OBJECT[@basetype='port']",               // 主机端口状态
+			"./OBJECT[@basetype='expander-ports']",     // 扩展端口状态
+			"./OBJECT[@basetype='compact-flash']",      // CompactFlash状态
 		}
+		for j := 0; j < len(childElems); j++ {
+			stateElems := controllerElems[i].FindElements(childElems[j])
+			for k := 0; k < len(stateElems); k++ {
+				id := stateElems[k].FindElement("./PROPERTY[@name='durable-id']").Text()
+				health := stateElems[k].FindElement("./PROPERTY[@name='health']").Text()
 
-		pElems := controllerElems[i].FindElements("./OBJECT[@basetype='port']")
-		for i := 0; i < len(pElems); i++ {
-			id := pElems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
-			health := pElems[i].FindElement("./PROPERTY[@name='health']").Text()
-
-			t.Log("主机端口状态", id, health)
-		}
-
-		epElems := controllerElems[i].FindElements("./OBJECT[@basetype='expander-ports']")
-		for i := 0; i < len(epElems); i++ {
-			id := epElems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
-			health := epElems[i].FindElement("./PROPERTY[@name='health']").Text()
-
-			t.Log("扩展端口状态", id, health)
-		}
-
-		cfElems := controllerElems[i].FindElements("./OBJECT[@basetype='compact-flash']")
-		for i := 0; i < len(cfElems); i++ {
-			id := cfElems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
-			health := cfElems[i].FindElement("./PROPERTY[@name='health']").Text()
-
-			t.Log("CompactFlash状态", id, health)
+				switch j {
+				case 0:
+					t.Log("网络端口状态", id, health)
+				case 1:
+					t.Log("主机端口状态", id, health)
+				case 2:
+					t.Log("扩展端口状态", id, health)
+				case 3:
+					t.Log("CompactFlash状态", id, health)
+				}
+			}
 		}
 	}
 
@@ -102,4 +97,94 @@ func TestHP_GetComponentState(t *testing.T) {
 			t.Log("风扇状态", id, health)
 		}
 	}
+}
+
+func TestHP_GetDiskInfo(t *testing.T) {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(TestResp); err != nil {
+		t.Errorf("[REST]解析磁盘状态响应数据失败, error: %v", err)
+		return
+	}
+
+	var (
+		sizeTotal   int
+		sizeSpares  int
+		sizeVirtual int
+	)
+
+	elems := doc.FindElements("/RESPONSE/OBJECT[@basetype='drives']")
+	for i := 0; i < len(elems); i++ {
+		// 使用情况
+		usageNumeric := elems[i].FindElement("./PROPERTY[@name='usage-numeric']").Text()
+		// 大小
+		sizeNumeric := elems[i].FindElement("./PROPERTY[@name='size-numeric']").Text()
+		sizeNumericInt, _ := strconv.Atoi(sizeNumeric)
+
+		sizeTotal += sizeNumericInt * 512
+		switch usageNumeric {
+		case "2", "3":
+			sizeSpares += sizeNumericInt * 512
+		case "9":
+			sizeVirtual += sizeNumericInt * 512
+		}
+	}
+
+	t.Log(sizeTotal, sizeSpares, sizeVirtual)
+}
+
+func TestHP_GetPoolInfo(t *testing.T) {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(TestResp); err != nil {
+		t.Errorf("[REST]请求存储池信息失败, error: %v", err)
+		return
+	}
+
+	var virtPoolAllocSizeTotal int64
+
+	elems := doc.FindElements("/RESPONSE/OBJECT[@basetype='pools']")
+	for i := 0; i < len(elems); i++ {
+		// 页面大小（块）
+		pageSize := elems[i].FindElement("./PROPERTY[@name='page-size-numeric']").Text()
+		pageSizeInt, _ := strconv.Atoi(pageSize)
+		// 分配的页数
+		allocatedPages := elems[i].FindElement("./PROPERTY[@name='allocated-pages']").Text()
+		allocatedPagesInt, _ := strconv.ParseInt(allocatedPages, 10, 64)
+
+		virtPoolAllocSizeTotal += int64(pageSizeInt) * allocatedPagesInt * 512
+	}
+
+	t.Log(virtPoolAllocSizeTotal)
+}
+
+func TestHP_GetVolumeGroupInfo(t *testing.T) {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(TestResp); err != nil {
+		t.Errorf("[REST]请求卷组信息失败, error: %v", err)
+		return
+	}
+
+	var (
+		totalSize            int64
+		virtUnallocSizeTotal int64
+	)
+
+	elems := doc.FindElements("/RESPONSE/OBJECT/OBJECT[@basetype='volumes']")
+	for i := 0; i < len(elems); i++ {
+		volumeTypeNumeric := elems[i].FindElement("./PROPERTY[@name='volume-type-numeric']").Text()
+
+		sizeNumeric := elems[i].FindElement("./PROPERTY[@name='size-numeric']").Text()
+		sizeNumericInt, _ := strconv.ParseInt(sizeNumeric, 10, 64)
+
+		if volumeTypeNumeric == "0" ||
+			volumeTypeNumeric == "2" ||
+			volumeTypeNumeric == "4" ||
+			volumeTypeNumeric == "8" ||
+			volumeTypeNumeric == "13" ||
+			volumeTypeNumeric == "15" {
+			totalSize += sizeNumericInt
+		}
+	}
+
+	// 11832412602368
+	t.Log(totalSize, virtUnallocSizeTotal)
 }

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,15 @@ type HPCrawlerData struct {
 	CompactFlashStates  []interface{} `json:"compactFlashStates"`  // CompactFlash状态
 	PowerSuppliesStates []interface{} `json:"powerSuppliesStates"` // 电源状态
 	FanStates           []interface{} `json:"fanStates"`           // 风扇状态
+
+	DiskInfo []interface{} `json:"diskInfo"`
+
+	SizeTotal   int64 `json:"sizeTotal"`   // 总容量
+	SizeSpares  int64 `json:"sizeSpares"`  // 全局备用磁盘(spaceSpares)
+	SizeVirtual int64 `json:"sizeVirtual"` // 虚拟磁盘组(spaceVirtualPools)
+
+	VirtPoolAllocSizeTotal int64 `json:"virtPoolAllocSizeTotal"` // 已分配(spaceVirtualAlloc)(poolsSet)
+	VirtUnallocSizeTotal   int64 `json:"virtUnallocSizeTotal"`   // 未分配(spaceVirtualUnalloc)(volumeGroupsSet)
 }
 
 func (h *HPCrawlerData) PrintStr() {
@@ -113,13 +123,29 @@ func (c *HP) Start() {
 	}
 
 	// 系统信息
-	c.GetSystemInfo()
+	if err := c.GetSystemInfo(); err != nil {
+		return
+	}
 	// 版本信息
-	c.GetVersionInfo()
+	if err := c.GetVersionInfo(); err != nil {
+		return
+	}
 	// 组件状态
-	c.GetComponentState()
+	if err := c.GetComponentState(); err != nil {
+		return
+	}
 	// 磁盘信息
-	c.GetDiskInfo()
+	if err := c.GetDiskInfo(); err != nil {
+		return
+	}
+	// 存储池信息
+	if err := c.GetPoolInfo(); err != nil {
+		return
+	}
+	// 卷组信息
+	if err := c.GetVolumeGroupInfo(); err != nil {
+		return
+	}
 
 	c.CrawlerData.PrintStr()
 }
@@ -178,6 +204,7 @@ func (c *HP) Login() error {
 			// 设置本地语言为中文
 			localRequest, _ := http.NewRequest("POST", loginUrl, strings.NewReader("/api/set/cli-parameters/locale/Chinese-Simplified"))
 			localRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			localRequest.Header.Set("Cookie", c.AuthCookie)
 			if localResp, err := client.Do(localRequest); err != nil {
 				c.Log.Errorf("设置本地语言为中文失败, error: %v", err)
 			} else {
@@ -256,50 +283,60 @@ func (c *HP) RequestJson(method, url string, params io.Reader) (string, error) {
 	}
 }
 
-func (c *HP) GetSystemInfo() {
+func (c *HP) GetSystemInfo() error {
 	c.Log.Debug("[REST]系统信息")
 
 	requestUrl := fmt.Sprintf("%s/v3/api/show/system?_=%d", c.Host, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求系统信息失败, error: %v", err)
+		return err
 	} else {
 		doc := etree.NewDocument()
 		if err := doc.ReadFromString(data); err != nil {
 			c.Log.Errorf("[REST]解析系统信息响应数据失败, error: %v", err)
+			return err
 		}
 		element := doc.FindElement("/RESPONSE/OBJECT/PROPERTY[@name='vendor-name']")
 		c.CrawlerData.VendorName = element.Text()
+
+		return nil
 	}
 }
 
-func (c *HP) GetVersionInfo() {
+func (c *HP) GetVersionInfo() error {
 	c.Log.Debug("[REST]版本信息")
 
 	requestUrl := fmt.Sprintf("%s/v3/api/show/version?_=%d", c.Host, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求版本信息失败, error: %v", err)
+		return err
 	} else {
 		doc := etree.NewDocument()
 		if err := doc.ReadFromString(data); err != nil {
 			c.Log.Errorf("[REST]解析版本信息响应数据失败, error: %v", err)
+			return err
 		}
 		elements := doc.FindElements("/RESPONSE/OBJECT[@basetype='versions']/PROPERTY[@name='bundle-version']")
 		for i := 0; i < len(elements); i++ {
 			c.CrawlerData.BundleVersions = append(c.CrawlerData.BundleVersions, elements[i].Text())
 		}
+
+		return nil
 	}
 }
 
-func (c *HP) GetComponentState() {
+func (c *HP) GetComponentState() error {
 	c.Log.Debug("[REST]组件状态(不包括磁盘)")
 
 	requestUrl := fmt.Sprintf("%s/v3/api/show/enclosures?_=%d", c.Host, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
-		c.Log.Errorf("[REST]请求版本信息失败, error: %v", err)
+		c.Log.Errorf("[REST]请求组件状态失败, error: %v", err)
+		return err
 	} else {
 		doc := etree.NewDocument()
 		if err := doc.ReadFromString(data); err != nil {
 			c.Log.Errorf("[REST]解析组件状态响应数据失败, error: %v", err)
+			return err
 		}
 
 		// 控制器状态
@@ -319,16 +356,16 @@ func (c *HP) GetComponentState() {
 				"./OBJECT[@basetype='expander-ports']",     // 扩展端口状态
 				"./OBJECT[@basetype='compact-flash']",      // CompactFlash状态
 			}
-			for i := 0; i < len(childElems); i++ {
-				stateElems := cElems[i].FindElements(childElems[i])
-				for j := 0; j < len(stateElems); j++ {
-					id := stateElems[j].FindElement("./PROPERTY[@name='durable-id']").Text()
-					health := stateElems[j].FindElement("./PROPERTY[@name='health']").Text()
+			for j := 0; j < len(childElems); j++ {
+				stateElems := cElems[i].FindElements(childElems[j])
+				for k := 0; k < len(stateElems); k++ {
+					id := stateElems[k].FindElement("./PROPERTY[@name='durable-id']").Text()
+					health := stateElems[k].FindElement("./PROPERTY[@name='health']").Text()
 
 					state := make(map[string]interface{})
 					state["id"] = id
 					state["health"] = health
-					switch i {
+					switch j {
 					case 0:
 						c.CrawlerData.NetworkStates = append(c.CrawlerData.NetworkStates, state)
 					case 1:
@@ -365,12 +402,129 @@ func (c *HP) GetComponentState() {
 				c.CrawlerData.FanStates = append(c.CrawlerData.FanStates, fState)
 			}
 		}
+
+		return nil
 	}
 }
 
-func (c *HP) GetDiskInfo() {
+func (c *HP) GetDiskInfo() error {
 	c.Log.Debug("[REST]磁盘信息")
 
-	// view-source:https://7.3.20.19/v3/api/show/disks?_=1633914554615
+	requestUrl := fmt.Sprintf("%s/v3/api/show/disks?_=%d", c.Host, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
+		c.Log.Errorf("[REST]请求磁盘信息失败, error: %v", err)
+		return err
+	} else {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(data); err != nil {
+			c.Log.Errorf("[REST]解析磁盘信息响应数据失败, error: %v", err)
+			return err
+		}
 
+		elems := doc.FindElements("/RESPONSE/OBJECT[@basetype='drives']")
+		for i := 0; i < len(elems); i++ {
+			// ID
+			id := elems[i].FindElement("./PROPERTY[@name='durable-id']").Text()
+			// 运行状态
+			health := elems[i].FindElement("./PROPERTY[@name='health']").Text()
+			// 描述
+			description := elems[i].FindElement("./PROPERTY[@name='description']").Text()
+			// 大小
+			size := elems[i].FindElement("./PROPERTY[@name='size']").Text()
+			// 状态
+			status := elems[i].FindElement("./PROPERTY[@name='status']").Text()
+
+			diskInfo := make(map[string]interface{})
+			diskInfo["id"] = id
+			diskInfo["health"] = health
+			diskInfo["description"] = description
+			diskInfo["size"] = size
+			diskInfo["status"] = status
+			c.CrawlerData.DiskInfo = append(c.CrawlerData.DiskInfo, diskInfo)
+
+			// 使用情况
+			usageNumeric := elems[i].FindElement("./PROPERTY[@name='usage-numeric']").Text()
+			// 大小
+			sizeNumeric := elems[i].FindElement("./PROPERTY[@name='size-numeric']").Text()
+			sizeNumericInt, _ := strconv.ParseInt(sizeNumeric, 10, 64)
+
+			c.CrawlerData.SizeTotal += sizeNumericInt * 512
+			switch usageNumeric {
+			case "2", "3":
+				c.CrawlerData.SizeSpares += sizeNumericInt * 512
+			case "9":
+				c.CrawlerData.SizeVirtual += sizeNumericInt * 512
+			}
+		}
+
+		return nil
+	}
+}
+
+func (c *HP) GetPoolInfo() error {
+	c.Log.Debug("[REST]存储池信息")
+
+	requestUrl := fmt.Sprintf("%s/v3/api/show/pools?_=%d", c.Host, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
+		c.Log.Errorf("[REST]请求存储池信息失败, error: %v", err)
+		return err
+	} else {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(data); err != nil {
+			c.Log.Errorf("[REST]解析存储池信息响应数据失败, error: %v", err)
+			return err
+		}
+
+		elems := doc.FindElements("/RESPONSE/OBJECT[@basetype='pools']")
+		for i := 0; i < len(elems); i++ {
+			// 页面大小（块）（8192）
+			pageSize := elems[i].FindElement("./PROPERTY[@name='page-size-numeric']").Text()
+			pageSizeInt, _ := strconv.Atoi(pageSize)
+			// 分配的页数
+			allocatedPages := elems[i].FindElement("./PROPERTY[@name='allocated-pages']").Text()
+			allocatedPagesInt, _ := strconv.ParseInt(allocatedPages, 10, 64)
+
+			c.CrawlerData.VirtPoolAllocSizeTotal += int64(pageSizeInt) * allocatedPagesInt * 512
+		}
+
+		return nil
+	}
+}
+
+func (c *HP) GetVolumeGroupInfo() error {
+	c.Log.Debug("[REST]卷组信息")
+
+	requestUrl := fmt.Sprintf("%s/v3/api/show/volume-groups?_=%d", c.Host, time.Now().UnixNano()/1e6)
+	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
+		c.Log.Errorf("[REST]请求卷组信息失败, error: %v", err)
+		return err
+	} else {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromString(data); err != nil {
+			c.Log.Errorf("[REST]解析存储池信息响应数据失败, error: %v", err)
+			return err
+		}
+
+		var volumeTotalSize int64
+		// 计算总页数
+		elems := doc.FindElements("/RESPONSE/OBJECT/OBJECT[@basetype='volumes']")
+		for i := 0; i < len(elems); i++ {
+			sizeNumeric := elems[i].FindElement("./PROPERTY[@name='size-numeric']").Text()
+			sizeNumericInt, _ := strconv.ParseInt(sizeNumeric, 10, 64)
+
+			volumeTypeNumeric := elems[i].FindElement("./PROPERTY[@name='volume-type-numeric']").Text()
+			if volumeTypeNumeric == "0" ||
+				volumeTypeNumeric == "2" ||
+				volumeTypeNumeric == "4" ||
+				volumeTypeNumeric == "8" ||
+				volumeTypeNumeric == "13" ||
+				volumeTypeNumeric == "15" {
+				volumeTotalSize += sizeNumericInt * 512
+			}
+		}
+
+		c.CrawlerData.VirtUnallocSizeTotal = volumeTotalSize - c.CrawlerData.VirtPoolAllocSizeTotal
+
+		return nil
+	}
 }

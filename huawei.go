@@ -138,22 +138,36 @@ func (c *Huawei) Start() {
 	c.CrawlerData.SectorSize = 512
 
 	// 服务状态
-	// c.GetServerStatus()
+	if err := c.GetServerStatus(); err != nil {
+		return
+	}
 	// 系统基本信息
-	// c.GetSystemInfo()
+	if err := c.GetSystemInfo(); err != nil {
+		return
+	}
 	// 存储池信息
-	// c.GetStoragePoolInfo()
+	if err := c.GetStoragePoolInfo(); err != nil {
+		return
+	}
 	// 风扇信息
-	// c.GetFanInfo()
+	if err := c.GetFanInfo(); err != nil {
+		return
+	}
 	// 电源信息
-	// c.GetPowerInfo()
+	if err := c.GetPowerInfo(); err != nil {
+		return
+	}
 	// FC端口信息
-	// c.GetFcPortInfo()
+	if err := c.GetFcPortInfo(); err != nil {
+		return
+	}
 
 	c.CrawlerData.PrintFile("huawei_text.txt")
 
 	// 当前系统各种参数的实时指标状态
-	c.GetCurrentState()
+	if err := c.GetCurrentState(); err != nil {
+		return
+	}
 }
 
 func (c *Huawei) Login() error {
@@ -269,12 +283,13 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 	}
 }
 
-func (c *Huawei) GetServerStatus() {
+func (c *Huawei) GetServerStatus() error {
 	c.Log.Debug("[REST]服务状态")
 
 	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/server/status?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求服务状态失败, error: %v", err)
+		return err
 	} else {
 		// 服务状态
 		status := gjson.Get(data, "data.status").String()
@@ -283,15 +298,18 @@ func (c *Huawei) GetServerStatus() {
 		// 服务状态描述
 		description := gjson.Get(data, "data.description").String()
 		c.CrawlerData.ServerStatusDescription = description
+
+		return nil
 	}
 }
 
-func (c *Huawei) GetSystemInfo() {
+func (c *Huawei) GetSystemInfo() error {
 	c.Log.Debug("[REST]系统信息")
 
 	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/system/?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求系统信息失败, error: %v", err)
+		return err
 	} else {
 		// 设备型号
 		productMode := gjson.Get(data, "data.PRODUCTMODE").String()
@@ -343,6 +361,8 @@ func (c *Huawei) GetSystemInfo() {
 
 		// 总订阅容量
 		// c.CrawlerData.TotalCapacity
+
+		return nil
 	}
 }
 
@@ -394,12 +414,13 @@ func (c *Huawei) GetStoragePoolForSystem() {
 	}
 }
 
-func (c *Huawei) GetStoragePoolInfo() {
+func (c *Huawei) GetStoragePoolInfo() error {
 	c.Log.Debug("[REST]存储池信息")
 
 	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/storagepool?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求存储池信息失败, error: %v", err)
+		return err
 	} else {
 		// 解析数据
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
@@ -437,15 +458,18 @@ func (c *Huawei) GetStoragePoolInfo() {
 
 			c.CrawlerData.StoragePoolInfo = append(c.CrawlerData.StoragePoolInfo, storagePoolInfo)
 		}, "data")
+
+		return nil
 	}
 }
 
-func (c *Huawei) GetFanInfo() {
+func (c *Huawei) GetFanInfo() error {
 	c.Log.Debug("[REST]风扇信息")
 
 	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/fan?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求风扇信息失败, error: %v", err)
+		return err
 	} else {
 		// 解析数据
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
@@ -476,15 +500,18 @@ func (c *Huawei) GetFanInfo() {
 
 			c.CrawlerData.FanInfo = append(c.CrawlerData.FanInfo, fanInfo)
 		}, "data")
+
+		return nil
 	}
 }
 
-func (c *Huawei) GetPowerInfo() {
+func (c *Huawei) GetPowerInfo() error {
 	c.Log.Debug("[REST]电源信息")
 
 	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/power?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求电源信息失败, error: %v", err)
+		return err
 	} else {
 		// 解析数据
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
@@ -513,15 +540,18 @@ func (c *Huawei) GetPowerInfo() {
 
 			c.CrawlerData.PowerInfo = append(c.CrawlerData.PowerInfo, powerInfo)
 		}, "data")
+
+		return nil
 	}
 }
 
-func (c *Huawei) GetFcPortInfo() {
+func (c *Huawei) GetFcPortInfo() error {
 	c.Log.Debug("[REST]FC端口信息")
 
 	requestUrl := fmt.Sprintf("%s/deviceManager/rest/%s/fc_port?t=%d", c.Host, c.DeviceId, time.Now().UnixNano()/1e6)
 	if data, err := c.RequestJson("GET", requestUrl, nil); err != nil {
 		c.Log.Errorf("[REST]请求FC端口信息失败, error: %v", err)
+		return err
 	} else {
 		// 解析数据
 		_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
@@ -550,10 +580,12 @@ func (c *Huawei) GetFcPortInfo() {
 
 			c.CrawlerData.FcPortInfo = append(c.CrawlerData.FcPortInfo, fcPortInfo)
 		}, "data")
+
+		return nil
 	}
 }
 
-func (c *Huawei) GetCurrentState() {
+func (c *Huawei) GetCurrentState() error {
 	// 采集指标
 	indexList := []string{"fc_port", "disk", "diskpool", "lun"}
 
@@ -568,7 +600,7 @@ func (c *Huawei) GetCurrentState() {
 		listUrl := fmt.Sprintf("%s/deviceManager/rest/%s/%s?t=%d", c.Host, c.DeviceId, index, time.Now().UnixNano()/1e6)
 		if data, err := c.RequestJson("GET", listUrl, nil); err != nil {
 			c.Log.Errorf("[REST]请求[%s]列表数据失败, error: %v", index, err)
-			return
+			return err
 		} else {
 			_, _ = jsonparser.ArrayEach([]byte(data), func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
 				dataType := gjson.Get(string(value), "TYPE").String()
@@ -593,10 +625,12 @@ func (c *Huawei) GetCurrentState() {
 
 			if data, err := c.RequestJson("GET", collectUrl, nil); err != nil {
 				c.Log.Errorf("[REST]请求[%s]指标信息失败, error: %v", index, err)
-				return
+				return err
 			} else {
 				c.Log.Debugf("[REST]UUID[%s]的[%s]的指标项数据, %s", index, uuid, gjson.Get(data, "data.0"))
 			}
 		}
 	}
+
+	return nil
 }

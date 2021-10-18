@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/buger/jsonparser"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buger/jsonparser"
 	"github.com/gorilla/websocket"
 	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
@@ -41,10 +41,7 @@ type DellCrawlerData struct {
 	FreeSpace  map[string]string `json:"freeSpace"`
 	TotalSpace map[string]string `json:"totalSpace"`
 
-	PoolUsedSpace  map[string]string `json:"poolUsedSpace"`
-	PoolFreeSpace  map[string]string `json:"poolFreeSpace"`
-	PoolTotalSpace map[string]string `json:"poolTotalSpace"`
-
+	PoolInfo      []map[string]string `json:"poolInfo"`
 	EnclosureInfo []map[string]string `json:"enclosureInfo"`
 	DiskInfo      []map[string]string `json:"diskInfo"`
 	PortInfo      []map[string]string `json:"portInfo"`
@@ -69,8 +66,6 @@ type Dell struct {
 
 	SerialNumber string
 
-	wg          sync.WaitGroup
-	wsConn      *websocket.Conn
 	CrawlerData *DellCrawlerData
 }
 
@@ -93,6 +88,9 @@ func NewDellCrawler() (*Dell, error) {
 
 	c.CrawlerData = new(DellCrawlerData)
 
+	c.CrawlerData.UsedSpace = make(map[string]string)
+	c.CrawlerData.FreeSpace = make(map[string]string)
+	c.CrawlerData.TotalSpace = make(map[string]string)
 	return c, nil
 }
 
@@ -128,25 +126,24 @@ func (c *Dell) Start() {
 		}
 	}
 
-	// 启动WebSocket客户端
-	if err := c.Connect(); err != nil {
+	if err := c.GetContext(); err != nil {
 		return
 	}
 	// 获取基础信息
-	c.GetBasicInfo()
-	// 获取硬盘信息、
-	c.GetDiskInfo()
-
+	if err := c.GetBasicInfo(); err != nil {
+		return
+	}
+	// 获取硬盘信息
+	if err := c.GetDiskInfo(); err != nil {
+		return
+	}
 	c.CrawlerData.PrintStr()
 }
 
 func (c *Dell) Login() error {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	if login, err := client.Get(c.Host); err != nil {
 		c.Log.Errorf("获取登录页面失败, error: %v", err)
@@ -194,60 +191,61 @@ func (c *Dell) Login() error {
 				c.Log.Errorf("写入授权信息到文件失败, error: %v", err)
 				return err
 			}
-
-			// 获取序列号
-			ctxUrl := c.Host + "/session/context"
-			ctxRequest, _ := http.NewRequest("GET", ctxUrl, nil)
-			ctxRequest.Header.Set("Cookie", c.AuthCookie)
-			if ctxResp, err := client.Do(ctxRequest); err != nil {
-				c.Log.Errorf("获取系统上下文信息失败, error: %v", err)
-				return err
-			} else {
-				defer func() {
-					_ = ctxResp.Body.Close()
-				}()
-				if code := ctxResp.StatusCode; code != 200 {
-					c.Log.Errorf("获取系统上下文信息失败, 错误码: %d", code)
-					return errors.New(fmt.Sprintf("获取系统上下文信息失败, 错误码: %d", code))
-				}
-
-				if ctxBody, err := ioutil.ReadAll(ctxResp.Body); err != nil {
-					c.Log.Errorf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err)
-					return errors.New(fmt.Sprintf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err))
-				} else {
-					c.SerialNumber = gjson.Get(string(ctxBody), "pluginData.api.user.scSerialNumber").String()
-				}
-			}
 			return nil
 		}
 	}
 }
 
-func (c *Dell) Connect() error {
-	// 创建websocket客户端
+func (c *Dell) GetContext() error {
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
+	// 获取序列号
+	ctxUrl := c.Host + "/session/context"
+	ctxRequest, _ := http.NewRequest("GET", ctxUrl, nil)
+	ctxRequest.Header.Set("Cookie", c.AuthCookie)
+	if ctxResp, err := client.Do(ctxRequest); err != nil {
+		c.Log.Errorf("获取系统上下文信息失败, error: %v", err)
+		return err
+	} else {
+		defer func() {
+			_ = ctxResp.Body.Close()
+		}()
+		if code := ctxResp.StatusCode; code != 200 {
+			c.Log.Errorf("获取系统上下文信息失败, 错误码: %d", code)
+			return errors.New(fmt.Sprintf("获取系统上下文信息失败, 错误码: %d", code))
+		}
+
+		if ctxBody, err := ioutil.ReadAll(ctxResp.Body); err != nil {
+			c.Log.Errorf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err)
+			return errors.New(fmt.Sprintf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err))
+		} else {
+			c.SerialNumber = gjson.Get(string(ctxBody), "pluginData.api.user.scSerialNumber").String()
+		}
+	}
+	return nil
+}
+
+func (c *Dell) GetBasicInfo() error {
 	dialer := websocket.Dialer{
 		TLSClientConfig: &tls.Config{
 			RootCAs:            nil,
 			InsecureSkipVerify: true,
 		},
 	}
-	var err error
-	c.wsConn, _, err = dialer.Dial(c.WSHost+"/messages", http.Header{
+	wsConn, _, err := dialer.Dial(c.WSHost+"/messages", http.Header{
 		"Cookie": []string{c.AuthCookie},
 	})
-	if err != nil || c.wsConn == nil {
+	if err != nil || wsConn == nil {
 		return err
-	} else {
-		return nil
 	}
-}
 
-func (c *Dell) GetBasicInfo() {
+	var wg sync.WaitGroup
 	go func() {
 		for {
-			if _, message, err := c.wsConn.ReadMessage(); err != nil {
+			if _, message, err := wsConn.ReadMessage(); err != nil {
 				c.Log.Errorf("Websocket读取数据失败, message: %b, error: %v", message, err)
-				return
+				wg.Done()
 			} else {
 				correlationId := gjson.Get(string(message), "correlationId").String()
 				switch correlationId {
@@ -264,27 +262,30 @@ func (c *Dell) GetBasicInfo() {
 							c.CrawlerData.FreeSpace["data"] = data
 							c.CrawlerData.FreeSpace["title"] = title
 						}
-					}, "result.chartData")
+					}, "result", "chartData")
 
 					c.CrawlerData.TotalSpace["data"] = gjson.Get(string(message), "result.totalSpace.bytes").String()
 					c.CrawlerData.TotalSpace["title"] = gjson.Get(string(message), "result.totalSpace.displayString").String()
 				case "2": // 存储池容量
 					_, _ = jsonparser.ArrayEach(message, func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
-						seriesColorId := gjson.Get(string(value), "seriesColorId").String()
+						poolInfo := make(map[string]string)
+						_, _ = jsonparser.ArrayEach(message, func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
+							seriesColorId := gjson.Get(string(value), "seriesColorId").String()
 
-						data := gjson.Get(string(value), "value").String()
-						title := gjson.Get(string(value), "caption").String()
-						if seriesColorId == "UsedSpace" { // 已使用
-							c.CrawlerData.PoolUsedSpace["data"] = data
-							c.CrawlerData.PoolUsedSpace["title"] = title
-						} else if seriesColorId == "FreeSpace" { // 可用
-							c.CrawlerData.PoolFreeSpace["data"] = data
-							c.CrawlerData.PoolFreeSpace["title"] = title
-						}
-					}, "result.sizeChartData")
+							data := gjson.Get(string(value), "value").String()
+							title := gjson.Get(string(value), "caption").String()
+							if seriesColorId == "UsedSpace" { // 已使用
+								poolInfo["usedSpaceData"] = data
+								poolInfo["usedSpaceTitle"] = title
+							} else if seriesColorId == "FreeSpace" { // 可用
+								poolInfo["freeSpaceData"] = data
+								poolInfo["freeSpaceTitle"] = title
+							}
+						}, "sizeChartData")
 
-					c.CrawlerData.PoolTotalSpace["data"] = gjson.Get(string(message), "result.allocatedSpace.bytes").String()
-					c.CrawlerData.PoolTotalSpace["title"] = gjson.Get(string(message), "result.allocatedSpace.displayString").String()
+						poolInfo["totalSpaceData"] = gjson.Get(string(value), "allocatedSpace.bytes").String()
+						poolInfo["totalSpaceTitle"] = gjson.Get(string(value), "allocatedSpace.displayString").String()
+					}, "result")
 				case "3": // 机柜状态
 					_, _ = jsonparser.ArrayEach(message, func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
 						enclosureInfo := make(map[string]string)
@@ -295,10 +296,10 @@ func (c *Dell) GetBasicInfo() {
 						enclosureInfo["statusName"] = gjson.Get(string(value), "status.enumName").String()
 
 						c.CrawlerData.EnclosureInfo = append(c.CrawlerData.EnclosureInfo, enclosureInfo)
-					}, "result.enclosureList")
+					}, "result", "enclosureList")
 				}
 			}
-			c.wg.Done()
+			wg.Done()
 		}
 	}()
 
@@ -312,10 +313,10 @@ func (c *Dell) GetBasicInfo() {
 	getCapacityData.MethodArguments = []string{c.SerialNumber}
 	getCapacityData.HandlerName = "StorageCenterSummaryService"
 	getCapacityDataMsg, _ := json.Marshal(getCapacityData)
-	if err := c.wsConn.WriteMessage(websocket.TextMessage, getCapacityDataMsg); err != nil {
+	if err := wsConn.WriteMessage(websocket.TextMessage, getCapacityDataMsg); err != nil {
 		c.Log.Errorf("获取总容量请求发送失败, error: %v", err)
 	} else {
-		c.wg.Add(1)
+		wg.Add(1)
 	}
 
 	// 存储池容量
@@ -328,10 +329,10 @@ func (c *Dell) GetBasicInfo() {
 	listStorageTypes.MethodArguments = []string{c.SerialNumber}
 	listStorageTypes.HandlerName = "StorageTypeService"
 	listStorageTypesMsg, _ := json.Marshal(listStorageTypes)
-	if err := c.wsConn.WriteMessage(websocket.TextMessage, listStorageTypesMsg); err != nil {
+	if err := wsConn.WriteMessage(websocket.TextMessage, listStorageTypesMsg); err != nil {
 		c.Log.Errorf("获取存储池容量请求发送失败, error: %v", err)
 	} else {
-		c.wg.Add(1)
+		wg.Add(1)
 	}
 
 	// 机柜状态
@@ -344,21 +345,36 @@ func (c *Dell) GetBasicInfo() {
 	getHardwareOverview.MethodArguments = []string{c.SerialNumber}
 	getHardwareOverview.HandlerName = "StorageCenterService"
 	getHardwareOverviewMsg, _ := json.Marshal(getHardwareOverview)
-	if err := c.wsConn.WriteMessage(websocket.TextMessage, getHardwareOverviewMsg); err != nil {
+	if err := wsConn.WriteMessage(websocket.TextMessage, getHardwareOverviewMsg); err != nil {
 		c.Log.Errorf("获取机柜状态请求发送失败, error: %v", err)
 	} else {
-		c.wg.Add(1)
+		wg.Add(1)
 	}
 
-	c.wg.Wait()
+	wg.Wait()
+	return nil
 }
 
-func (c *Dell) GetDiskInfo() {
+func (c *Dell) GetDiskInfo() error {
+	dialer := websocket.Dialer{
+		TLSClientConfig: &tls.Config{
+			RootCAs:            nil,
+			InsecureSkipVerify: true,
+		},
+	}
+	wsConn, _, err := dialer.Dial(c.WSHost+"/messages", http.Header{
+		"Cookie": []string{c.AuthCookie},
+	})
+	if err != nil || wsConn == nil {
+		return err
+	}
+
+	var wg sync.WaitGroup
 	go func() {
 		for {
-			if _, message, err := c.wsConn.ReadMessage(); err != nil {
+			if _, message, err := wsConn.ReadMessage(); err != nil {
 				c.Log.Errorf("Websocket读取数据失败, message: %b, error: %v", message, err)
-				return
+				wg.Done()
 			} else {
 				_, _ = jsonparser.ArrayEach(message, func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
 					diskInfo := make(map[string]string)
@@ -369,9 +385,9 @@ func (c *Dell) GetDiskInfo() {
 					diskInfo["statusName"] = gjson.Get(string(value), "status.enumName").String()
 
 					c.CrawlerData.DiskInfo = append(c.CrawlerData.DiskInfo, diskInfo)
-				}, "result.items")
+				}, "result", "items")
 			}
-			c.wg.Done()
+			wg.Done()
 		}
 	}()
 
@@ -386,20 +402,35 @@ func (c *Dell) GetDiskInfo() {
 		getHardwareDisks.MethodArguments = []string{c.SerialNumber, info["index"]}
 		getHardwareDisks.HandlerName = "DiskService"
 		getHardwareDisksMsg, _ := json.Marshal(getHardwareDisks)
-		if err := c.wsConn.WriteMessage(websocket.TextMessage, getHardwareDisksMsg); err != nil {
+		if err := wsConn.WriteMessage(websocket.TextMessage, getHardwareDisksMsg); err != nil {
 			c.Log.Errorf("获取硬盘状态请求发送失败, error: %v", err)
 		} else {
-			c.wg.Add(1)
+			wg.Add(1)
 		}
 	}
 
-	c.wg.Wait()
+	wg.Wait()
+	return nil
 }
 
-func (c *Dell) GetPortInfo() {
+func (c *Dell) GetPortInfo() error {
+	dialer := websocket.Dialer{
+		TLSClientConfig: &tls.Config{
+			RootCAs:            nil,
+			InsecureSkipVerify: true,
+		},
+	}
+	wsConn, _, err := dialer.Dial(c.WSHost+"/messages", http.Header{
+		"Cookie": []string{c.AuthCookie},
+	})
+	if err != nil || wsConn == nil {
+		return err
+	}
+
+	var wg sync.WaitGroup
 	go func() {
 		for {
-			if _, message, err := c.wsConn.ReadMessage(); err != nil {
+			if _, message, err := wsConn.ReadMessage(); err != nil {
 				c.Log.Errorf("Websocket读取数据失败, message: %b, error: %v", message, err)
 				return
 			} else {
@@ -413,7 +444,7 @@ func (c *Dell) GetPortInfo() {
 					c.CrawlerData.PortInfo = append(c.CrawlerData.PortInfo, portInfo)
 				}, "result.items")
 			}
-			c.wg.Done()
+			wg.Done()
 		}
 	}()
 
@@ -427,9 +458,15 @@ func (c *Dell) GetPortInfo() {
 	getControllerPorts.MethodArguments = []string{c.SerialNumber}
 	getControllerPorts.HandlerName = "ControllerService"
 	getControllerPortsMsg, _ := json.Marshal(getControllerPorts)
-	if err := c.wsConn.WriteMessage(websocket.TextMessage, getControllerPortsMsg); err != nil {
+	if err := wsConn.WriteMessage(websocket.TextMessage, getControllerPortsMsg); err != nil {
 		c.Log.Errorf("获取端口状态请求发送失败, error: %v", err)
 	} else {
-		c.wg.Add(1)
+		wg.Add(1)
 	}
+
+	wg.Wait()
+	if err := wsConn.Close(); err != nil {
+		return err
+	}
+	return nil
 }

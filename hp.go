@@ -159,12 +159,9 @@ func (c *HP) Start() {
 }
 
 func (c *HP) Login() error {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	// 登录请求参数
 	h := md5.New()
@@ -235,12 +232,9 @@ func (c *HP) Login() error {
 
 func (c *HP) RequestJson(method, url string, params io.Reader) (string, error) {
 	// 构造请求客户端
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	request, err := http.NewRequest(method, url, params)
 	if err != nil {

@@ -173,12 +173,9 @@ func (c *Huawei) Start() {
 }
 
 func (c *Huawei) Login() error {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	// 登录请求参数
 	params := map[string]interface{}{
@@ -232,12 +229,9 @@ func (c *Huawei) Login() error {
 
 func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, error) {
 	// 构造请求客户端
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	request, err := http.NewRequest(method, url, params)
 	if err != nil {

@@ -143,12 +143,9 @@ func (c *IbmV7000) Login() error {
 	loginUrl := c.Host + "/login"
 
 	// 构造请求客户端
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	// 请求登录页面获取JSESSIONID和_sync
 	c.Log.Debug("获取登陆页面")
@@ -215,12 +212,9 @@ func (c *IbmV7000) Login() error {
 }
 
 func (c *IbmV7000) PostRPC(params io.Reader) (string, error) {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
 
 	request, _ := http.NewRequest("POST", c.Host+"/RPCAdapter", params)
 	request.Header.Set("Content-Type", "application/json-rpc")

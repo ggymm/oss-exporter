@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
 	github.com/beevik/etree v1.1.0
 	github.com/buger/jsonparser v1.1.1
+	github.com/gorilla/websocket v1.4.2
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/robertkrimen/otto v0.0.0-20211008084715-4eacda02dd21
 	github.com/tidwall/gjson v1.9.1

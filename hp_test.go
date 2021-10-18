@@ -19,7 +19,7 @@ func TestHP_MD5(t *testing.T) {
 }
 
 var (
-	//go:embed test_resp.xml
+	//go:embed hp_test_resp.xml
 	TestResp string
 )
 

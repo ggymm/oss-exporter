@@ -1,15 +1,15 @@
 package main
 
 import (
-	_ "embed"
-	"log"
-
 	"bytes"
 	"crypto/tls"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,26 +27,6 @@ var (
 )
 
 type IbmV7000CrawlerData struct {
-	SectorSize int64 `json:"sectorSize"`
-
-	UsableDiskpoolCapacityData int64 `json:"usableDiskpoolCapacityData"`
-
-	ServerStatus            string `json:"serverStatus"`
-	ServerStatusDescription string `json:"serverStatusDescription"`
-	ProductMode             string `json:"productMode"`
-	SystemCapacity          int64  `json:"systemCapacity"`
-	SystemUsedCapacity      int64  `json:"systemUsedCapacity"`
-	LunCapacity             int64  `json:"lunCapacity"`
-	FilesystemCapacity      int64  `json:"filesystemCapacity"`
-	DataProtectCapacity     int64  `json:"dataProtectCapacity"`
-	FreePoolCapacity        int64  `json:"freePoolCapacity"`
-	UsableCapacity          int64  `json:"usableCapacity"`
-	TotalCapacity           int64  `json:"totalCapacity"`
-
-	StoragePoolInfo []interface{} `json:"storagePoolInfo"`
-	FanInfo         []interface{} `json:"fanInfo"`
-	PowerInfo       []interface{} `json:"powerInfo"`
-	FcPortInfo      []interface{} `json:"fcPortInfo"`
 }
 
 func (h *IbmV7000CrawlerData) PrintFile(path string) {
@@ -66,8 +46,9 @@ type IbmV7000 struct {
 	AuthFile   string
 	AuthCookie string
 
-	Host     string
-	Account  string
+	Host string
+
+	Username string
 	Password string
 
 	CrawlerData *IbmV7000CrawlerData
@@ -85,7 +66,8 @@ func NewIbmV7000Crawler() (*IbmV7000, error) {
 	c.AuthFile = "cookie/ibm_v7000.cookie"
 
 	c.Host = "https://7.3.20.15"
-	c.Account = IbmAccount
+
+	c.Username = IbmAccount
 	c.Password = IbmPassword
 
 	c.CrawlerData = new(IbmV7000CrawlerData)
@@ -98,8 +80,9 @@ func (c *IbmV7000) Debug() {
 }
 
 func (c *IbmV7000) Start() {
-	c.Log.Debug("开始抓取IBM V7000存储设备")
+	c.Log.Debug("抓取IBM存储设备信息")
 
+	// 验证授权信息
 	if isExist(c.AuthFile) {
 		c.Log.Debug("检查到授权信息文件")
 		if cookie, err := ioutil.ReadFile(c.AuthFile); err != nil {
@@ -126,24 +109,33 @@ func (c *IbmV7000) Start() {
 	}
 
 	// 获取物理池状态
-	// c.GetMonitorSystem()
-
+	if err := c.GetMonitorSystem(); err != nil {
+		return
+	}
 	// 获取物理池状态
-	// c.GetPhysicalPools()
-
+	if err := c.GetPhysicalPools(); err != nil {
+		return
+	}
 	// 获取系统状态（实时）
-	// c.GetClusterStates()
+	if err := c.GetClusterStates(); err != nil {
+		return
+	}
 	// 获取节点状态（实时）
-	// c.GetNodeStates()
-
+	if err := c.GetNodeStates(); err != nil {
+		return
+	}
 	// 获取主机集群状态
-	// c.GetHosts()
-
+	if err := c.GetHosts(); err != nil {
+		return
+	}
 	// 获取内部存储器（磁盘）状态
-	c.GetPhysicalInternal()
-
+	if err := c.GetPhysicalInternal(); err != nil {
+		return
+	}
 	// 获取卷状态
-	// c.GetVolumes()
+	if err := c.GetVolumes(); err != nil {
+		return
+	}
 }
 
 func (c *IbmV7000) Login() error {
@@ -180,10 +172,11 @@ func (c *IbmV7000) Login() error {
 		c.Log.Debug("执行登陆请求")
 		// 构造登录请求参数
 		form := url.Values{
-			"login":    []string{c.Account},
+			"login":    []string{c.Username},
 			"password": []string{c.Password},
 			"tzoffset": []string{"-480"},
 		}
+
 		// 构造请求对象
 		request, _ := http.NewRequest("POST", loginUrl, strings.NewReader(form.Encode()))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -195,13 +188,12 @@ func (c *IbmV7000) Login() error {
 			_ = resp.Body.Close()
 		}()
 		if err != nil {
-			c.Log.Errorf("执行登陆请求失败, error: %v", err)
+			c.Log.Errorf("登录失败, error: %v", err)
 		}
 
-		code := resp.StatusCode
-		if code != 200 {
-			c.Log.Errorf("执行登陆请求失败, 错误码: %d", code)
-			return err
+		if resp.StatusCode != 200 {
+			c.Log.Errorf("登录失败, 错误码: %d", resp.StatusCode)
+			return errors.New(fmt.Sprintf("登录失败, 错误码: %d", resp.StatusCode))
 		}
 
 		c.Log.Debug("保存登陆之后的授权信息")
@@ -214,7 +206,7 @@ func (c *IbmV7000) Login() error {
 			}
 		}
 		c.AuthCookie = strings.Join(saveCookies, ";")
-		if err := ioutil.WriteFile(c.AuthFile, []byte(strings.Join(saveCookies, ";")), os.ModePerm); err != nil {
+		if err := ioutil.WriteFile(c.AuthFile, []byte(c.AuthCookie), os.ModePerm); err != nil {
 			c.Log.Errorf("写入授权信息到文件失败, error: %v", err)
 			return err
 		}
@@ -249,7 +241,7 @@ func (c *IbmV7000) PostRPC(params io.Reader) (string, error) {
 	}
 }
 
-func (c *IbmV7000) GetMonitorSystem() {
+func (c *IbmV7000) GetMonitorSystem() error {
 	c.Log.Debug("[RPC]获取系统状态")
 
 	// 请求参数
@@ -262,17 +254,19 @@ func (c *IbmV7000) GetMonitorSystem() {
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
-		return
+		return err
 	}
 
 	if data, err := c.PostRPC(bytes.NewReader(paramsJson)); err != nil {
 		c.Log.Errorf("[RPC]获取系统状态信息失败, error: %v", err)
+		return err
 	} else {
 		c.Log.Debugf("[RPC]获取系统状态信息结果, %s", data)
+		return nil
 	}
 }
 
-func (c *IbmV7000) GetPhysicalPools() {
+func (c *IbmV7000) GetPhysicalPools() error {
 	c.Log.Debug("[RPC]获取物理池状态")
 
 	// 请求参数
@@ -285,17 +279,19 @@ func (c *IbmV7000) GetPhysicalPools() {
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
-		return
+		return err
 	}
 
 	if data, err := c.PostRPC(bytes.NewReader(paramsJson)); err != nil {
 		c.Log.Errorf("[RPC]获取物理池状态失败, error: %v", err)
+		return err
 	} else {
 		c.Log.Debugf("[RPC]获取物理池状态结果, %s", data)
+		return nil
 	}
 }
 
-func (c *IbmV7000) GetClusterStates() {
+func (c *IbmV7000) GetClusterStates() error {
 	c.Log.Debug("[RPC]获取系统状态")
 
 	// 请求参数
@@ -308,17 +304,19 @@ func (c *IbmV7000) GetClusterStates() {
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
-		return
+		return err
 	}
 
 	if data, err := c.PostRPC(bytes.NewReader(paramsJson)); err != nil {
 		c.Log.Errorf("[RPC]获取系统状态失败, error: %v", err)
+		return err
 	} else {
 		c.Log.Debugf("[RPC]获取系统状态结果, %s", data)
+		return nil
 	}
 }
 
-func (c *IbmV7000) GetNodeStates() {
+func (c *IbmV7000) GetNodeStates() error {
 	c.Log.Debug("[RPC]获取节点状态")
 
 	// TODO: 获取节点数
@@ -332,17 +330,19 @@ func (c *IbmV7000) GetNodeStates() {
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
-		return
+		return err
 	}
 
 	if data, err := c.PostRPC(bytes.NewReader(paramsJson)); err != nil {
 		c.Log.Errorf("[RPC]获取节点状态失败, error: %v", err)
+		return err
 	} else {
 		c.Log.Debugf("[RPC]获取节点状态结果, %s", data)
+		return nil
 	}
 }
 
-func (c *IbmV7000) GetHosts() {
+func (c *IbmV7000) GetHosts() error {
 	c.Log.Debug("[RPC]获取主机集群状态")
 
 	// 请求参数
@@ -355,17 +355,19 @@ func (c *IbmV7000) GetHosts() {
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
-		return
+		return err
 	}
 
 	if data, err := c.PostRPC(bytes.NewReader(paramsJson)); err != nil {
 		c.Log.Errorf("[RPC]获取主机集群状态失败, error: %v", err)
+		return err
 	} else {
 		c.Log.Debugf("[RPC]获取主机集群状态结果, %s", data)
+		return nil
 	}
 }
 
-func (c *IbmV7000) GetPhysicalInternal() {
+func (c *IbmV7000) GetPhysicalInternal() error {
 	c.Log.Debug("[RPC]获取内部存储器（磁盘）状态")
 
 	// 请求参数
@@ -388,17 +390,19 @@ func (c *IbmV7000) GetPhysicalInternal() {
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
-		return
+		return err
 	}
 
 	if data, err := c.PostRPC(bytes.NewReader(paramsJson)); err != nil {
 		c.Log.Errorf("[RPC]获取内部存储器（磁盘）状态失败, error: %v", err)
+		return err
 	} else {
 		c.Log.Debugf("[RPC]获取内部存储器（磁盘）状态结果, %s", data)
+		return nil
 	}
 }
 
-func (c *IbmV7000) GetVolumes() {
+func (c *IbmV7000) GetVolumes() error {
 	c.Log.Debug("[POST]获取卷状态")
 
 	tr := &http.Transport{
@@ -420,16 +424,17 @@ func (c *IbmV7000) GetVolumes() {
 	request.Header.Set("Cookie", c.AuthCookie)
 	if resp, err := client.Do(request); err != nil {
 		c.Log.Errorf("获取请求数据失败, params: %v, error: %v", form, err)
-		return
+		return err
 	} else {
 		defer func() {
 			_ = resp.Body.Close()
 		}()
 		if body, err := ioutil.ReadAll(resp.Body); err != nil {
 			c.Log.Errorf("读取请求体数据失败, params: VDiskGridDataHandler, error: %v", err)
-			return
+			return err
 		} else {
 			fmt.Println(string(body))
+			return nil
 		}
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -70,7 +69,8 @@ type Huawei struct {
 	AuthFile   string
 	AuthCookie string
 
-	Host     string
+	Host string
+
 	Username string
 	Password string
 
@@ -91,6 +91,7 @@ func NewHuaweiCrawler() (*Huawei, error) {
 	c.AuthFile = "cookie/huawei.cookie"
 
 	c.Host = "https://7.3.20.34:8088"
+
 	c.Username = HuaweiAccount
 	c.Password = HuaweiPassword
 
@@ -104,8 +105,9 @@ func (c *Huawei) Debug() {
 }
 
 func (c *Huawei) Start() {
-	c.Log.Debug("开始抓取Huawei存储设备")
+	c.Log.Debug("抓取华为存储设备信息")
 
+	// 验证授权信息
 	if isExist(c.AuthFile) {
 		c.Log.Debug("检查到授权信息文件")
 		if cookie, err := ioutil.ReadFile(c.AuthFile); err != nil {
@@ -178,6 +180,7 @@ func (c *Huawei) Login() error {
 	}
 	client := &http.Client{Transport: tr}
 
+	// 登录请求参数
 	params := map[string]interface{}{
 		"scope":     0,
 		"username":  c.Username,
@@ -185,20 +188,21 @@ func (c *Huawei) Login() error {
 		"isEncrypt": true,
 		"loginMode": 3,
 	}
-
 	paramsJson, err := json.Marshal(params)
 	if err != nil {
 		c.Log.Errorf("JSON序列化出错, %v, error: %v", params, err)
 		return err
 	}
 
+	// 构造登录请求
 	loginUrl := c.Host + "/deviceManager/rest/xxxxx/login"
 	request, _ := http.NewRequest("POST", loginUrl, bytes.NewReader(paramsJson))
 	request.Header.Set("Content-Type", "application/json;charset=UTF-8")
 	request.Header.Set("Cookie", c.AuthCookie)
 
+	// 发起请求
 	if resp, err := client.Do(request); err != nil {
-		c.Log.Errorf("请求失败, params: %v, error: %v", params, err)
+		c.Log.Errorf("登录失败, params: %v, error: %v", params, err)
 		return err
 	} else {
 		defer func() {
@@ -209,16 +213,12 @@ func (c *Huawei) Login() error {
 		if len(cookies) > 0 {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				c.Log.Errorf("读取请求体数据失败, params: %v, error: %v", params, err)
+				c.Log.Errorf("读取登录请求响应失败, params: %v, error: %v", params, err)
 				return err
 			}
 
 			c.DeviceId = gjson.Get(string(body), "data.deviceid").String()
 			c.AuthCookie = cookies[0].Name + "=" + cookies[0].Value
-			if err := os.MkdirAll(filepath.Dir(c.AuthFile), os.ModePerm); err != nil {
-				c.Log.Errorf("创建授权信息文件失败, error: %v", err)
-				return err
-			}
 			if err := ioutil.WriteFile(c.AuthFile, []byte(c.AuthCookie), os.ModePerm); err != nil {
 				c.Log.Errorf("写入授权信息到文件失败, error: %v", err)
 				return err
@@ -258,7 +258,7 @@ func (c *Huawei) RequestJson(method, url string, params io.Reader) (string, erro
 		// 判断HTTP状态码
 		if code := resp.StatusCode; code != 200 {
 			c.Log.Errorf("发送请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
-			return "", errors.New("发送请求失败")
+			return "", errors.New(fmt.Sprintf("发送请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header))
 		}
 		if body, err := ioutil.ReadAll(resp.Body); err != nil {
 			c.Log.Errorf("读取请求体数据失败, url: %s, error: %v", url, err)

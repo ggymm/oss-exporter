@@ -12,7 +12,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -66,7 +65,8 @@ type HP struct {
 	AuthFile   string
 	AuthCookie string
 
-	Host     string
+	Host string
+
 	Username string
 	Password string
 
@@ -85,6 +85,7 @@ func NewHPCrawler() (*HP, error) {
 	c.AuthFile = "cookie/hp.cookie"
 
 	c.Host = "https://7.3.20.19"
+
 	c.Username = HPAccount
 	c.Password = HPPassword
 
@@ -93,7 +94,14 @@ func NewHPCrawler() (*HP, error) {
 	return c, nil
 }
 
+func (c *HP) Debug() {
+
+}
+
 func (c *HP) Start() {
+	c.Log.Debug("抓取惠普存储设备信息")
+
+	// 验证授权信息
 	if isExist(c.AuthFile) {
 		c.Log.Debug("检查到授权信息文件")
 		if cookie, err := ioutil.ReadFile(c.AuthFile); err != nil {
@@ -158,15 +166,19 @@ func (c *HP) Login() error {
 	}
 	client := &http.Client{Transport: tr}
 
-	loginUrl := c.Host + "/v3/api/"
+	// 登录请求参数
 	h := md5.New()
 	h.Write([]byte(c.Username + "_" + c.Password))
 	encodeParam := "/api/login/" + hex.EncodeToString(h.Sum(nil))
+
+	// 构造登录请求
+	loginUrl := c.Host + "/v3/api/"
 	request, _ := http.NewRequest("POST", loginUrl, strings.NewReader(encodeParam))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
+	// 发起请求
 	if resp, err := client.Do(request); err != nil {
-		c.Log.Errorf("请求失败, params: %v, error: %v", encodeParam, err)
+		c.Log.Errorf("登录失败, params: %v, error: %v", encodeParam, err)
 		return err
 	} else {
 		defer func() {
@@ -174,8 +186,8 @@ func (c *HP) Login() error {
 		}()
 
 		if code := resp.StatusCode; code != 200 {
-			c.Log.Errorf("执行登陆请求失败, 错误码: %d", code)
-			return err
+			c.Log.Errorf("登录失败, 错误码: %d", code)
+			return errors.New(fmt.Sprintf("登录失败, 错误码: %d", code))
 		}
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -192,10 +204,6 @@ func (c *HP) Login() error {
 		session := element.Text()
 		if len(session) > 0 {
 			c.AuthCookie = "wbisessionkey=" + session + ";wbiusername=manage"
-			if err := os.MkdirAll(filepath.Dir(c.AuthFile), os.ModePerm); err != nil {
-				c.Log.Errorf("创建授权信息文件失败, error: %v", err)
-				return err
-			}
 			if err := ioutil.WriteFile(c.AuthFile, []byte(c.AuthCookie), os.ModePerm); err != nil {
 				c.Log.Errorf("写入授权信息到文件失败, error: %v", err)
 				return err
@@ -207,14 +215,14 @@ func (c *HP) Login() error {
 			localRequest.Header.Set("Cookie", c.AuthCookie)
 			if localResp, err := client.Do(localRequest); err != nil {
 				c.Log.Errorf("设置本地语言为中文失败, error: %v", err)
+				return err
 			} else {
 				defer func() {
 					_ = localResp.Body.Close()
 				}()
 				if code := localResp.StatusCode; code != 200 {
 					c.Log.Errorf("设置本地语言为中文失败, 错误码: %d", code)
-				} else {
-					c.Log.Debug("设置本地语言为中文成功")
+					return errors.New(fmt.Sprintf("设置本地语言为中文失败, 错误码: %d", code))
 				}
 			}
 
@@ -253,7 +261,7 @@ func (c *HP) RequestJson(method, url string, params io.Reader) (string, error) {
 		// 判断HTTP状态码
 		if code := resp.StatusCode; code != 200 {
 			c.Log.Errorf("发送请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header)
-			return "", errors.New("发送请求失败")
+			return "", errors.New(fmt.Sprintf("发送请求失败, url, %s, 错误码: %d, 错误信息: %v", url, code, resp.Header))
 		}
 		if body, err := ioutil.ReadAll(resp.Body); err != nil {
 			c.Log.Errorf("读取请求体数据失败, url: %s, error: %v", url, err)

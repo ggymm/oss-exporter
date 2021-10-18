@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 )
 
@@ -14,7 +13,6 @@ func isExist(path string) bool {
 		if os.IsNotExist(err) {
 			return false
 		}
-		fmt.Println(err)
 		return false
 	}
 	return true

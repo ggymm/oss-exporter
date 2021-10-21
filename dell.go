@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/buger/jsonparser"
+	"github.com/gorilla/websocket"
+	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -13,11 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/buger/jsonparser"
-	"github.com/gorilla/websocket"
-	"github.com/tidwall/gjson"
-	"go.uber.org/zap"
+	"time"
 )
 
 var (
@@ -41,10 +41,14 @@ type DellCrawlerData struct {
 	FreeSpace  map[string]string `json:"freeSpace"`
 	TotalSpace map[string]string `json:"totalSpace"`
 
-	PoolInfo      []map[string]string `json:"poolInfo"`
-	EnclosureInfo []map[string]string `json:"enclosureInfo"`
-	DiskInfo      []map[string]string `json:"diskInfo"`
-	PortInfo      []map[string]string `json:"portInfo"`
+	PoolInfo      []map[string]string `json:"poolInfo"`      // 存储池信息
+	EnclosureInfo []map[string]string `json:"enclosureInfo"` // 机柜信息
+	DiskInfo      []map[string]string `json:"diskInfo"`      // 磁盘信息
+	PortInfo      []map[string]string `json:"portInfo"`      // 端口信息
+
+	VolumeState []map[string]int64 `json:"volumeState"` // 卷状态
+	DiskState   []map[string]int64 `json:"diskState"`   // 磁盘
+	PortState   []map[string]int64 `json:"portState"`   // 端口状态
 }
 
 func (h *DellCrawlerData) PrintStr() {
@@ -97,6 +101,31 @@ func NewDellCrawler() (*Dell, error) {
 func (c *Dell) Start() {
 	c.Log.Debug("抓取戴尔存储设备信息")
 
+	if err := c.preStart(); err != nil {
+		return
+	}
+
+	// 获取基础信息
+	if err := c.GetBasicInfo(); err != nil {
+		return
+	}
+	// 获取硬盘信息
+	if err := c.GetDiskInfo(); err != nil {
+		return
+	}
+	// 获取端口信息
+	if err := c.GetPortInfo(); err != nil {
+		return
+	}
+
+	// 获取系统指标
+	if err := c.GetSystemStatus(); err != nil {
+		return
+	}
+	c.CrawlerData.PrintStr()
+}
+
+func (c *Dell) preStart() error {
 	// 验证授权信息
 	if isExist(c.AuthFile) {
 		c.Log.Debug("检查到授权信息文件")
@@ -104,7 +133,7 @@ func (c *Dell) Start() {
 			c.Log.Errorf("读取授权信息文件失败, 需要重新登陆, error: %v", err)
 			if err := c.Login(); err != nil {
 				c.Log.Errorf("登陆失败, 请重试, error: %v", err)
-				return
+				return err
 			}
 		} else {
 			// 需要判断授权是否过期
@@ -114,7 +143,7 @@ func (c *Dell) Start() {
 				c.Log.Debug("授权信息文件为空, 执行登陆操作")
 				if err := c.Login(); err != nil {
 					c.Log.Errorf("登陆失败, 请重试, error: %v", err)
-					return
+					return err
 				}
 			}
 		}
@@ -122,22 +151,44 @@ func (c *Dell) Start() {
 		c.Log.Debug("未检查到授权信息文件, 执行登陆操作")
 		if err := c.Login(); err != nil {
 			c.Log.Errorf("登陆失败, 请重试, error: %v", err)
-			return
+			return err
 		}
 	}
 
-	if err := c.GetContext(); err != nil {
-		return
+	// 获取系统信息
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
+	// 获取序列号
+	ctxUrl := c.Host + "/session/context"
+	ctxRequest, _ := http.NewRequest("GET", ctxUrl, nil)
+	ctxRequest.Header.Set("Cookie", c.AuthCookie)
+	if ctxResp, err := client.Do(ctxRequest); err != nil {
+		c.Log.Errorf("获取系统上下文信息失败, error: %v", err)
+		return err
+	} else {
+		defer func() {
+			_ = ctxResp.Body.Close()
+		}()
+		if code := ctxResp.StatusCode; code != 200 {
+			if code == 401 {
+				_ = os.Remove(c.AuthFile)
+				c.Log.Errorf("权限验证失败, 移除cookie文件, 请重新运行")
+				return errors.New("权限验证失败")
+			} else {
+				c.Log.Errorf("获取系统上下文信息失败, 错误码: %d", code)
+				return errors.New(fmt.Sprintf("获取系统上下文信息失败, 错误码: %d", code))
+			}
+		}
+
+		if ctxBody, err := ioutil.ReadAll(ctxResp.Body); err != nil {
+			c.Log.Errorf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err)
+			return errors.New(fmt.Sprintf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err))
+		} else {
+			c.SerialNumber = gjson.Get(string(ctxBody), "pluginData.api.user.scSerialNumber").String()
+		}
 	}
-	// 获取基础信息
-	if err := c.GetBasicInfo(); err != nil {
-		return
-	}
-	// 获取硬盘信息
-	if err := c.GetDiskInfo(); err != nil {
-		return
-	}
-	c.CrawlerData.PrintStr()
+	return nil
 }
 
 func (c *Dell) Login() error {
@@ -194,36 +245,6 @@ func (c *Dell) Login() error {
 			return nil
 		}
 	}
-}
-
-func (c *Dell) GetContext() error {
-	client := &http.Client{Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}}
-	// 获取序列号
-	ctxUrl := c.Host + "/session/context"
-	ctxRequest, _ := http.NewRequest("GET", ctxUrl, nil)
-	ctxRequest.Header.Set("Cookie", c.AuthCookie)
-	if ctxResp, err := client.Do(ctxRequest); err != nil {
-		c.Log.Errorf("获取系统上下文信息失败, error: %v", err)
-		return err
-	} else {
-		defer func() {
-			_ = ctxResp.Body.Close()
-		}()
-		if code := ctxResp.StatusCode; code != 200 {
-			c.Log.Errorf("获取系统上下文信息失败, 错误码: %d", code)
-			return errors.New(fmt.Sprintf("获取系统上下文信息失败, 错误码: %d", code))
-		}
-
-		if ctxBody, err := ioutil.ReadAll(ctxResp.Body); err != nil {
-			c.Log.Errorf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err)
-			return errors.New(fmt.Sprintf("读取系统上下文信息请求体数据失败, url: %s, error: %v", ctxUrl, err))
-		} else {
-			c.SerialNumber = gjson.Get(string(ctxBody), "pluginData.api.user.scSerialNumber").String()
-		}
-	}
-	return nil
 }
 
 func (c *Dell) GetBasicInfo() error {
@@ -442,7 +463,7 @@ func (c *Dell) GetPortInfo() error {
 					portInfo["statusName"] = gjson.Get(string(value), "status.enumName").String()
 
 					c.CrawlerData.PortInfo = append(c.CrawlerData.PortInfo, portInfo)
-				}, "result.items")
+				}, "result", "items")
 			}
 			wg.Done()
 		}
@@ -465,8 +486,84 @@ func (c *Dell) GetPortInfo() error {
 	}
 
 	wg.Wait()
-	if err := wsConn.Close(); err != nil {
+	return nil
+}
+
+func (c *Dell) GetSystemStatus() error {
+	dialer := websocket.Dialer{
+		TLSClientConfig: &tls.Config{
+			RootCAs:            nil,
+			InsecureSkipVerify: true,
+		},
+	}
+	wsConn, _, err := dialer.Dial(c.WSHost+"/messages", http.Header{
+		"Cookie": []string{c.AuthCookie},
+	})
+	if err != nil || wsConn == nil {
 		return err
 	}
+
+	var wg sync.WaitGroup
+	go func() {
+		for {
+			if _, message, err := wsConn.ReadMessage(); err != nil {
+				c.Log.Errorf("Websocket读取数据失败, message: %b, error: %v", message, err)
+				return
+			} else {
+				// 对应关系
+				// SYSTEM = ["StorageCenter", "ScVolume", "ScDisk"],
+				// SERVERS = ["ScServerFolder", "ScPhysicalServer", "ScServer", "ScServerCluster", "ScVirtualServer", "ScServerHba"],
+				// FAULTDOMAINS = ["ScFaultDomainFolder", "ScFaultDomain", "ScIscsiFaultDomain", "ScFibreChannelFaultDomain", "ScSasFaultDomain"],
+				// CONTROLLERS = ["ScControllerFolder", "ScController", "ScControllerPortType", "ScControllerPort"],
+				// DISKS = ["ScDiskFolder", "ScDiskFolderClass", "ScDisk", "ScDiskClass"],
+				// VOLUMES = ["ScVolumeFolder", "ScVolume"],
+				// STORAGEPROFILES = ["ScStorageProfileFolder", "ScStorageProfile"],
+				// QOSPROFILES = ["ScQosProfileFolder", "ScQosProfileType", "ScQosProfile"],
+
+				// 函数调用堆栈
+				// RealTimeChartSource.prototype.getChartData -> filterData -> filterSlices
+				// getAverageDataValues -> calcAvgOverTime -> calcAvgOverTime -> calAvgAndUpdateUsageValues
+
+				// 系统对应处理函数 -> updateIoUsageForSystem
+				// 其他对应处理函数 -> updateIoUsage
+
+				_, _ = jsonparser.ArrayEach(message, func(value []byte, valueType jsonparser.ValueType, offset int, err error) {
+					state := make(map[string]int64)
+
+					objType := gjson.Get(string(value), "objType").String()
+					_ = json.Unmarshal([]byte(gjson.Get(string(value), "values").String()), &state)
+					switch objType {
+					case "ScVolume":
+						c.CrawlerData.VolumeState = append(c.CrawlerData.VolumeState, state)
+					case "ScDisk":
+						c.CrawlerData.DiskState = append(c.CrawlerData.DiskState, state)
+					case "ScFibreChannelFaultDomain":
+						c.CrawlerData.PortState = append(c.CrawlerData.PortState, state)
+					}
+				}, "result", "data")
+			}
+			wg.Done()
+		}
+	}()
+
+	// 系统实时状态
+	c.Log.Debug("[RPC]获取系统实时状态")
+	gatherStatsInformation := new(DellRpcRequest)
+	gatherStatsInformation.Type = "rpc-call"
+	gatherStatsInformation.PluginId = "sc"
+	gatherStatsInformation.MethodName = "gatherStatsInformation"
+	gatherStatsInformation.MethodArguments = []string{
+		time.Now().Format("2006-01-02T15:04:05.000Z"),
+		c.SerialNumber,
+	}
+	gatherStatsInformation.HandlerName = "RealTimeDataService"
+	gatherStatsInformationMsg, _ := json.Marshal(gatherStatsInformation)
+	if err := wsConn.WriteMessage(websocket.TextMessage, gatherStatsInformationMsg); err != nil {
+		c.Log.Errorf("获取获取系统实时状态请求发送失败, error: %v", err)
+	} else {
+		wg.Add(1)
+	}
+
+	wg.Wait()
 	return nil
 }

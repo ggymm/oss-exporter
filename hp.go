@@ -101,33 +101,8 @@ func (c *HP) Debug() {
 func (c *HP) Start() {
 	c.Log.Debug("抓取惠普存储设备信息")
 
-	// 验证授权信息
-	if isExist(c.AuthFile) {
-		c.Log.Debug("检查到授权信息文件")
-		if cookie, err := ioutil.ReadFile(c.AuthFile); err != nil {
-			c.Log.Errorf("读取授权信息文件失败, 需要重新登陆, error: %v", err)
-			if err := c.Login(); err != nil {
-				c.Log.Errorf("登陆失败, 请重试, error: %v", err)
-				return
-			}
-		} else {
-			// 需要判断授权是否过期
-			if len(cookie) > 0 {
-				c.AuthCookie = string(cookie)
-			} else {
-				c.Log.Debug("授权信息文件为空, 执行登陆操作")
-				if err := c.Login(); err != nil {
-					c.Log.Errorf("登陆失败, 请重试, error: %v", err)
-					return
-				}
-			}
-		}
-	} else {
-		c.Log.Debug("未检查到授权信息文件, 执行登陆操作")
-		if err := c.Login(); err != nil {
-			c.Log.Errorf("登陆失败, 请重试, error: %v", err)
-			return
-		}
+	if err := c.preStart(); err != nil {
+		return
 	}
 
 	// 系统信息
@@ -156,6 +131,58 @@ func (c *HP) Start() {
 	}
 
 	c.CrawlerData.PrintStr()
+}
+
+func (c *HP) preStart() error {
+	// 验证授权信息
+	if isExist(c.AuthFile) {
+		c.Log.Debug("检查到授权信息文件")
+		if cookie, err := ioutil.ReadFile(c.AuthFile); err != nil {
+			c.Log.Errorf("读取授权信息文件失败, 需要重新登陆, error: %v", err)
+			if err := c.Login(); err != nil {
+				c.Log.Errorf("登陆失败, 请重试, error: %v", err)
+				return err
+			}
+		} else {
+			// 需要判断授权是否过期
+			if len(cookie) > 0 {
+				c.AuthCookie = string(cookie)
+			} else {
+				c.Log.Debug("授权信息文件为空, 执行登陆操作")
+				if err := c.Login(); err != nil {
+					c.Log.Errorf("登陆失败, 请重试, error: %v", err)
+					return err
+				}
+			}
+		}
+	} else {
+		c.Log.Debug("未检查到授权信息文件, 执行登陆操作")
+		if err := c.Login(); err != nil {
+			c.Log.Errorf("登陆失败, 请重试, error: %v", err)
+			return err
+		}
+	}
+
+	// 设置本地语言为中文
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}
+	localRequest, _ := http.NewRequest("POST", c.Host+"/v3/api/", strings.NewReader("/api/set/cli-parameters/locale/Chinese-Simplified"))
+	localRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	localRequest.Header.Set("Cookie", c.AuthCookie)
+	if localResp, err := client.Do(localRequest); err != nil {
+		c.Log.Errorf("设置本地语言为中文失败, error: %v", err)
+		return err
+	} else {
+		defer func() {
+			_ = localResp.Body.Close()
+		}()
+		if code := localResp.StatusCode; code != 200 {
+			c.Log.Errorf("设置本地语言为中文失败, 错误码: %d", code)
+			return errors.New(fmt.Sprintf("设置本地语言为中文失败, 错误码: %d", code))
+		}
+	}
+	return nil
 }
 
 func (c *HP) Login() error {
@@ -205,24 +232,6 @@ func (c *HP) Login() error {
 				c.Log.Errorf("写入授权信息到文件失败, error: %v", err)
 				return err
 			}
-
-			// 设置本地语言为中文
-			localRequest, _ := http.NewRequest("POST", loginUrl, strings.NewReader("/api/set/cli-parameters/locale/Chinese-Simplified"))
-			localRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			localRequest.Header.Set("Cookie", c.AuthCookie)
-			if localResp, err := client.Do(localRequest); err != nil {
-				c.Log.Errorf("设置本地语言为中文失败, error: %v", err)
-				return err
-			} else {
-				defer func() {
-					_ = localResp.Body.Close()
-				}()
-				if code := localResp.StatusCode; code != 200 {
-					c.Log.Errorf("设置本地语言为中文失败, 错误码: %d", code)
-					return errors.New(fmt.Sprintf("设置本地语言为中文失败, 错误码: %d", code))
-				}
-			}
-
 			return nil
 		} else {
 			return errors.New("登陆失败，未获取到授权信息")
